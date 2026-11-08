@@ -126,6 +126,24 @@ function personOf(id) {
 if (!state.perPerson[id]) state.perPerson[id] = defaultPerson();
 return state.perPerson[id];
 }
+/* ログイン中の利用者（端末内疑似動作：state.session.email があればその人、無ければ開発者） */
+function currentUser() {
+const dev = (state.users || []).find(u => u.role === "開発者") || (state.users || [])[0] || { email: "（開発者）", role: "開発者", protected: true};
+if (state.session && state.session.email) {
+const u = (state.users || []).find(x => x.email === state.session.email);
+if (u) return u;
+}
+return dev;
+}
+function isAdminUser() { const r = currentUser().role; return r === "開発者" || r === "管理者";}
+/* 🔑管理者メニューは開発者👑・管理者🔑だけが開ける。それ以外は✅ポップアップで案内する */
+function openAdmin() {
+if (!isAdminUser()) {
+showOk("", `<p>管理者メニューは管理者だけが開けます</p>`, [{ label: "OK", cls: "primary"}]);
+return;
+}
+renderAdmin();
+}
 function monthData(ym) {
 if (!state.months[ym]) state.months[ym] = { cells: {}, prevCells: {}, prevOffsOverride: null, prevStreakOverride: null, holidays: [], zentai: [], busy: [], quiet: [], dayRequired: {}};
 return state.months[ym];
@@ -418,6 +436,12 @@ document.querySelectorAll("#tabNav button").forEach(b => b.classList.toggle("act
 document.querySelectorAll("section.tabpage").forEach((s, i) => s.classList.toggle("show", i + 1 === n));
 renderTab(n);
 window.scrollTo({ top: 0});
+/* オートモード（設定モード）：オンのとき、月の作業の始まり＝②タブを開いたら
+* ポップアップ案内を自動で始める。採用済みの月では始めない */
+if (n === 2 && state.autoMode) {
+const shA = state.shifts[state.ui.month];
+if (!(shA && shA.adopted)) openWizard();
+}
 }
 function renderTab(n) {
 ({ 1: render1, 2: render2, 3: render3, 4: render4, 5: render5})[n]();
@@ -439,60 +463,77 @@ notice.innerHTML = `<div class="notice">新しいデータがあります 入れ
 renderGuide();
 }
 function renderGuide() {
+/* オートモードは「設定」として扱うため、常駐の案内バーは出さない（仕様訂正）。
+* 案内は②タブを開いたときにだけ自動で始まる（gotoTab 参照） */
 const bar = document.getElementById("guideBar");
-if (!state.autoMode) { bar.classList.remove("show"); return;}
-bar.innerHTML = `<b>🤖 オートモード：オン</b><span>ポップアップの案内で、希望休から印刷まで進められます。</span>
-<button class="btn" onclick="App.guideOpen()">案内を開く</button>
-<button class="btn primary" onclick="App.guideOff()">ここからは手動で進める</button>`;
-bar.classList.add("show");
+bar.classList.remove("show");
 }
 
-/* ---------------- ① 回送員・条件 ---------------- */
+/* ---------------- ① 回送員・条件 ----------------
+* 配列は本物ツールに合わせた（仕様メモ追記6）：横長テーブル＋横スクロール、
+* 左の社員番号・名前・所属は固定（sticky）。セレクトはネイティブ<select>。
+* 条件の保存先は従来どおり state.perPerson（データ文字列の互換を維持）。 */
 function render1() {
 const el = document.getElementById("page1");
 const members = sortedMembers();
+/* 個人条件セレクト：選択肢は追記6の文言。保存済みの旧表記が選択肢に無い場合は
+* その値も選択肢に足して、表示・保存の互換を壊さない */
+const selP = (cur, opts, fn) => {
+const disp = (cur == null || cur === "")? "指定無し": cur;
+const list = opts.slice();
+if (!list.includes(disp)) list.push(disp);
+return `<select onchange="${fn}">${list.map(o => `<option ${o === disp? "selected": ""}>${o}</option>`).join("")}</select>`;
+};
 const rows = members.map(mem => {
 const p = personOf(mem.id);
-const wdChips = WD_PY.map(w => `<span class="wdchip ${(p["毎週どれか休み"] || []).includes(w)? "on": ""}" onclick="App.toggleWeekly('${mem.id}','${w}')">${w}</span>`).join("");
-const sel = (cur, opts, fn) => `<select onchange="${fn}">${opts.map(o => `<option ${o === cur? "selected": ""}>${o}</option>`).join("")}</select>`;
+const wdChips = WD.map(w => `<span class="wdchip ${(p["毎週どれか休み"] || []).includes(w)? "on": ""}" onclick="App.toggleWeekly('${mem.id}','${w}')">${w}</span>`).join("");
 return `<tr>
-<td data-label="社員番号・名前・所属"><b>${esc(mem.id)}</b><br>${esc(mem.name)}<br><span class="sub">${esc(mem.org)}</span></td>
-<td data-label="毎週どれか休み">${wdChips}<div class="sub">押した曜日のどれか1日を毎週休みに</div></td>
-<td data-label="連勤数">${sel(p["連勤数"] || "3連勤まで", ["2連勤まで", "3連勤まで", "4連勤まで"], `App.setPerson('${mem.id}','連勤数',this.value)`)}<div class="sub">何連勤まで（5連勤は作りません）</div></td>
-<td data-label="連休回数">${sel(p["連休回数"] || "月1、2回", ["月1回", "月1、2回", "月2回"], `App.setPerson('${mem.id}','連休回数',this.value)`)}<div class="sub">月に何回連休を作るか</div></td>
-<td data-label="連休の日">${sel(p["連休の日"] || "指定無し", ["指定無し", "平日", "土日"], `App.setPerson('${mem.id}','連休の日',this.value==='指定無し'?null:this.value)`)}<div class="sub">平日だけ・土日祝だけ等</div></td>
-<td data-label="月末/月初">${sel(p["月末月初"] || "指定無し", ["指定無し", "月末", "月初", "どちらか"], `App.setPerson('${mem.id}','月末月初',this.value==='指定無し'?null:this.value)`)}<div class="sub">最終日・翌月1日を休みに（※計算への反映は今後の課題）</div></td>
-<td data-label="飛び石なし"><label><input type="checkbox" ${p["飛び石なし"]!== false? "checked": ""} onchange="App.setPerson('${mem.id}','飛び石なし',this.checked)"> 飛び石なし</label><div class="sub">「休→出→休」を作りません</div></td>
-<td data-label="土日祝休">${sel(p["土日祝休"] || "指定無し", ["指定無し", "1日〜2日", "1日〜3日", "2日〜4日", "3日〜5日"], `App.setPerson('${mem.id}','土日祝休',this.value==='指定無し'?null:this.value)`)}<div class="sub">土・日・祝日の休みを月に何日にするか</div></td>
-<td data-label="削除"><button class="btn" onclick="App.delMember('${mem.id}')">削除</button></td>
+<td class="stk stk1">${esc(mem.id)}</td>
+<td class="stk stk2"><b>${esc(mem.name)}</b></td>
+<td class="stk stk3">${esc(mem.org)}</td>
+<td>${wdChips}</td>
+<td>${selP(p["連勤数"] || "3連勤まで", ["指定無し", "3連勤まで", "4連勤まで"], `App.setPerson('${mem.id}','連勤数',this.value)`)}</td>
+<td>${selP(p["連休回数"] || "月1、2回", ["指定無し", "月1、2回", "月2回以上"], `App.setPerson('${mem.id}','連休回数',this.value)`)}</td>
+<td>${selP(p["連休の日"], ["指定無し", "平日", "土日"], `App.setPerson('${mem.id}','連休の日',this.value==='指定無し'?null:this.value)`)}</td>
+<td>${selP(p["月末月初"], ["指定無し", "月末休み", "月初休み", "どちらか"], `App.setPerson('${mem.id}','月末月初',this.value==='指定無し'?null:this.value)`)}</td>
+<td><input type="checkbox" class="tobi" ${p["飛び石なし"]!== false? "checked": ""} onchange="App.setPerson('${mem.id}','飛び石なし',this.checked)"></td>
+<td>${selP(p["土日祝休"], ["指定無し", "1日〜3日", "2日〜4日"], `App.setPerson('${mem.id}','土日祝休',this.value==='指定無し'?null:this.value)`)}</td>
+<td><button class="dellink" onclick="App.delMember('${mem.id}')">削除</button></td>
 </tr>`;
 }).join("");
 const pri = state.priority, pc = state.priorityCustom;
 const priRow = (label, key, def) => `<tr><td>${label}</td><td><input type="number" value="${pri[key]}" min="0" max="14" onchange="App.setPriority('${key}',this.value)" style="${pc[key]? "color:#ff8f96;border-color:#d2363c": ""}"></td></tr>`;
-const longRows = state.longHolidays.map((h, i) => `<tr>
-<td><input value="${esc(h.name)}" onchange="App.setLong(${i},'name',this.value)" style="width:110px"></td>
-<td><input type="date" value="${esc(h.from)}" onchange="App.setLong(${i},'from',this.value)"></td>
-<td><input type="date" value="${esc(h.to)}" onchange="App.setLong(${i},'to',this.value)"></td>
-<td><input value="${esc(h.work)}" placeholder="例：2027-01-04（無ければ空）" onchange="App.setLong(${i},'work',this.value)" style="width:200px"></td>
-<td><button class="btn" onclick="App.delLong(${i})">削除</button></td></tr>`).join("");
+const bandFor = name => /GW|ゴールデン/.test(name || "")? "band-green": /お盆|盆/.test(name || "")? "band-orange": /年末|年始/.test(name || "")? "band-blue": "band-gray";
+const longCards = state.longHolidays.map((h, i) => `
+<div class="card ${bandFor(h.name)}">
+<div class="flex"><input value="${esc(h.name)}" placeholder="名前（例：年末年始）" onchange="App.setLong(${i},'name',this.value)" style="width:170px">
+<button class="dellink" onclick="App.delLong(${i})">削除</button></div>
+<div class="flex mt"><label>何日から <input type="date" value="${esc(h.from)}" onchange="App.setLong(${i},'from',this.value)"></label>
+<label>何日まで <input type="date" value="${esc(h.to)}" onchange="App.setLong(${i},'to',this.value)"></label></div>
+<div class="flex mt"><span class="small">間の出勤日：${esc(h.work || "なし")}</span>
+<input type="date" id="longWork${i}">
+<button class="btn" onclick="App.addLongWork(${i})">+ 出勤日</button>
+${h.work? `<button class="btn" onclick="App.setLong(${i},'work','')">出勤日を消す</button>`: ""}</div>
+</div>`).join("");
 el.innerHTML = `
-<div class="card band-red"><h3>①-1 回送員の登録と一人ずつの条件</h3>
-<div class="flex"><span>並び順：</span><b>雇用区分 → 社員番号（標準）</b>
+<p class="sub" style="color:var(--text)">回送員を登録して、優先して守る条件・長い休みを確かめます。下へ順番に ①-1 → ①-2 → ①-3。終わったら一番下の「次へ」を押します。</p>
+<div class="card band-red"><h3>①-1 回送員の登録</h3>
+<div class="flex"><span>並び順：</span><select><option>雇用区分 → 社員番号（標準）</option></select>
 <button class="btn" onclick="App.orgOrder()">雇用区分の順番</button>
-<button class="btn" onclick="App.addMember()">＋ 回送員を追加（1人ずつ）</button>
-<button class="btn" onclick="App.toggleBulk()">＋ まとめて登録（一括）</button></div>
+<button class="btn primary" onclick="App.addMember()">+ 回送員を追加（1人ずつ）</button>
+<button class="btn blue" onclick="App.toggleBulk()">+ まとめて登録（一括）</button></div>
 <div id="bulkBox" style="display:none" class="mt">
 <div class="sub">1行に1人、「社員番号 名前 所属」の順で書いてください。取り込むと今の一覧と入れ替わります。個人条件は取り込みのあとで1人ずつ入れてください。</div>
 <textarea id="bulkText" rows="6" placeholder="100001 回送員A 東西"></textarea>
 <div class="btnrow"><button class="btn primary" onclick="App.doBulk()">取り込む（一覧と入れ替える）</button></div>
 </div>
-<div class="gwrap mt"><table class="mtab"><thead><tr>
-<th>社員番号／名前／所属</th><th>毎週どれか休み</th><th>連勤数</th><th>連休回数</th><th>連休の日</th><th>月末/月初</th><th>飛び石なし</th><th>土日祝休</th><th>削除</th>
+<div class="gwrap mt"><table class="ctab"><thead><tr>
+<th class="stk stk1">社員番号</th><th class="stk stk2">名前</th><th class="stk stk3">所属</th><th>毎週どれか休み</th><th>連動数</th><th>連休回数</th><th>連休の日</th><th>月末/月初</th><th>飛び石なし</th><th>土日祝休</th><th>削除</th>
 </tr></thead><tbody>${rows}</tbody></table></div>
-<p class="sub">名前はこの端末の中にだけ保存され、ネットには送られません。</p>
+<p class="sub">入力するとすぐ保存されます。毎週どれか休み＝押した曜日のどれか1日を毎週休みにします（例：火・水）。連動数＝何連勤まで（5連勤は作りません）。連休回数＝月に何回連休を作るか。連休の日＝平日だけ/土日祝だけに作る。月末/月初＝月の最終日・翌月1日を休みにするか（「どちらか」は前の月の最終日が休みでなければ1日を休みに）。飛び石なし＝「休→出→休」を作りません。土日祝休＝土・日・祝日の休みを月に何日にするか（1〜3日/2〜4日）。名前はこのパソコン（スマホ）の中にだけ保存され、ネットには送られません。</p>
 </div>
 <div class="card band-blue"><h3>①-2 優先して守る条件</h3>
-<p class="sub">上ほど優先です。数字は人数（${state.members.length}人）から自動で決まります。直した所は赤くなります。</p>
+<p class="sub">上ほど優先します。数字は回送員${state.members.length}人から自動で入っています。直した所は赤になります。</p>
 <table class="mtab"><tbody>
 <tr><td>1 希望休・有休は必ず休み</td><td>（必ず）</td></tr>
 <tr><td>2 週の休みは必ず2日</td><td>2日</td></tr>
@@ -504,12 +545,13 @@ ${priRow("5 繁忙日は多くてもこの人数", "busyMax")}
 <div class="btnrow"><button class="btn" onclick="App.resetPriority()">自動の数字に戻す</button>
 <label><input type="checkbox" ${state.common["飛び石なし"]? "checked": ""} onchange="App.setCommonTobi(this.checked)"> 飛び石なし（共通）</label></div>
 </div>
-<div class="card band-orange"><h3>①-3 長い休み（全員の全体休）</h3>
-<div class="gwrap"><table class="mtab"><thead><tr><th>名前</th><th>何日から</th><th>何日まで</th><th>間の出勤日</th><th></th></tr></thead><tbody>${longRows}</tbody></table></div>
-<div class="btnrow"><button class="btn" onclick="App.addLong()">＋ 長い休みを追加</button></div>
+<div class="card band-orange"><h3>①-3 長い休みがある場合（GW・お盆・年末年始）</h3>
+<p class="sub">長い休みの期間は、全員が「全（全体休）」になります。間の出勤日があるときは、その日だけ出勤日にできます。</p>
+${longCards}
+<div class="btnrow"><button class="btn primary" onclick="App.addLong()">+ 休みの期間を追加</button></div>
 <p class="redtext small">去年の日付が残っていると、その日も「全」になってしまいます。終わった休みは消してください。</p>
 </div>
-<div class="btnrow"><button class="btn primary" onclick="App.go(2)">次へ：② 希望休の表 →</button></div>`;
+<div class="btnrow"><button class="btn primary big" onclick="App.go(2)">次へ：② 希望休の表 →</button></div>`;
 }
 
 /* ---------------- 印刷イメージの画面プレビュー（紙スケール表示） ----------------
@@ -521,14 +563,17 @@ function paperPreviewHTML(kind, ym, schedule) {
   return `<div class="paperScale"><div class="paper" style="width:${PAPER_DESIGN_W}px">${sheetHTML(kind, ym, schedule)}</div></div>`;
 }
 function fitPaperScales() {
-  document.querySelectorAll(".paperScale").forEach(wrap => {
-    const paper = wrap.querySelector(".paper");
-    if (!paper) return;
+  document.querySelectorAll(".paperScale, .fitScale").forEach(wrap => {
+    const inner = wrap.querySelector(".paper, .fitInner");
+    if (!inner) return;
     const avail = wrap.clientWidth;
     if (!avail) return; // 非表示のときは何もしない（表示後に呼び直される）
-    const s = Math.min(1, avail / PAPER_DESIGN_W);
-    paper.style.transform = s < 1 ? `scale(${s})` : "";
-    wrap.style.height = Math.ceil(paper.offsetHeight * s) + "px";
+    inner.style.transform = "";
+    const w = inner.offsetWidth, h = inner.offsetHeight;
+    if (!w) return;
+    const s = Math.min(1, avail / w);
+    inner.style.transform = s < 1 ? `scale(${s})` : "";
+    wrap.style.height = Math.ceil(h * s) + "px";
   });
 }
 
@@ -561,8 +606,30 @@ function render2() {
 }
 
 /* ---------------- ③ 休みの入力 ---------------- */
-function calChips(ym, mode) {
-  // mode: "zentai"（祝→全→戻る） | "busy"（普通→繁→閑→普通）
+/* 日付チップの状態遷移（通常画面③とウィザードで共用） */
+function toggleChipState(mode, d) {
+  const md = monthData(state.ui.month);
+  if (mode === "zentai") {
+    const hol = md.holidays.includes(d), zen = md.zentai.includes(d);
+    if (!hol && !zen) md.holidays.push(d);
+    else if (hol) { md.holidays = md.holidays.filter(x => x !== d); md.zentai.push(d); }
+    else md.zentai = md.zentai.filter(x => x !== d);
+  } else {
+    const b = md.busy.includes(d), q = md.quiet.includes(d);
+    if (!b && !q) md.busy.push(d);
+    else if (b) { md.busy = md.busy.filter(x => x !== d); md.quiet.push(d); }
+    else md.quiet = md.quiet.filter(x => x !== d);
+  }
+  save();
+}
+function setDayRequiredState(d, v) {
+  const md = monthData(state.ui.month);
+  if (v === "" || v == null) delete md.dayRequired[d]; else md.dayRequired[d] = parseInt(v, 10);
+  save();
+}
+function calChips(ym, mode, fnName) {
+  // mode: "zentai"（祝→全→戻る） | "busy"（普通→繁→閑→普通）。fnName はタップ時の飛び先（既定 App.chip）
+  const fn = fnName || "App.chip";
   const md = monthData(ym), D = daysIn(ym), first = dateOf(ym, 1);
   const lead = (first.getDay() + 7) % 7;
   let cells = WD.map((w, i) => `<div class="dow" style="color:${i === 6 ? "#7db3ff" : i === 0 ? "#ff8f96" : "inherit"}">${w}</div>`).join("");
@@ -574,7 +641,7 @@ function calChips(ym, mode) {
     let st = "・";
     if (mode === "zentai") { if (zen) { cls += " zen"; st = "全"; } else if (hol) { cls += " hol"; st = "祝"; } }
     else { if (busy) { cls += " busy"; st = "繁"; } else if (quiet) { cls += " quiet"; st = "閑"; } }
-    cells += `<div class="dcell ${cls}" onclick="App.chip('${mode}',${d})">${d}<span class="st">${st}</span></div>`;
+    cells += `<div class="dcell ${cls}" onclick="${fn}('${mode}',${d})">${d}<span class="st">${st}</span></div>`;
   }
   return `<div class="cal">${cells}</div>`;
 }
@@ -636,7 +703,7 @@ function inputGridHTML(ym, tap) {
     }
     return `<tr>${tds}</tr>`;
   }).join("");
-  return `<div class="gwrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="fitScale"><div class="fitInner"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function render3() {
   const el = document.getElementById("page3"), ym = state.ui.month;
@@ -707,7 +774,7 @@ function scheduleTableHTML(ym, schedule, editable, onTap) {
   const dw = dailyWorkOf(schedule, ym);
   const foot = `<tr><td colspan="2" style="text-align:right;padding-right:6px;background:#fafafa">出勤人数合計</td>` +
     Array.from({ length: D }, (_, i) => `<td class="num">${dw[i + 1]}</td>`).join("") + `<td></td><td></td></tr>`;
-  return `<div class="gwrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}${foot}</tbody></table></div>`;
+  return `<div class="fitScale"><div class="fitInner"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}${foot}</tbody></table></div></div>`;
 }
 function checkHTML(schedule, ym) {
   const v = verifySchedule(schedule, ym);
@@ -801,13 +868,15 @@ function fullDataObj() { return { kind: "full", state }; }
 function render5() {
   const el = document.getElementById("page5");
   const ym = state.ui.month, sh = state.shifts[ym];
+  const admin = isAdminUser();
   const inboxRows = state.inbox.map((x, i) => `<div class="flex" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:7px 0">
     <span>${x.handled ? "" : "📢 "}<b>${esc(x.from)}</b> さんから${x.kind === "data" ? "データ" : "要望"}が届いています（${esc(x.date)}）${x.kind === "data" && !x.handled ? " → デフォルトに登録しますか？" : ""}<br><span class="sub">${esc(x.text || "")}</span></span>
     <span>${x.kind === "data" && !x.handled ? `<button class="btn orange" onclick="App.inboxRegister(${i})">デフォルトに登録</button>` : ""}
     <button class="btn" onclick="App.inboxDelete(${i})">削除</button></span></div>`).join("");
   const fbRows = state.feedback.map((f, i) => `<div class="flex" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0"><span>${esc(f.date)}：${esc(f.text)}</span><button class="btn" onclick="App.fbDelete(${i})">削除</button></div>`).join("");
-  el.innerHTML = `
-  <div class="card band-red"><h3>⑤ 便利な機能</h3>
+  /* 管理者用（書き出し・読み込み／届いたデータ）は管理者・開発者にだけ見せる。
+  * 登録利用者（管理者でない人）に見せるのは「データを管理者に送る」だけ（仕様メモ追記6） */
+  const adminBlocks = admin ? `
     <details class="fold"><summary>管理者の方へ（データの配り方）</summary>
       <p class="sub">管理者はこの作業は不要です。管理者メニュー（🔑）で「デフォルトに登録」すると、ほかの端末には「新しいデータがあります」と出て、更新すると同じ内容になります。ここにある書き出し・読み込みは、うまくいかないときの予備の方法です。</p>
       <details class="fold"><summary>管理者用：データの書き出し・読み込み（折りたたみ）</summary>
@@ -825,6 +894,14 @@ function render5() {
       </details>
     </details>
 
+    <h4 class="mt">📥 届いたデータ・要望（管理者用）</h4>
+    ${inboxRows || `<p class="sub">届いているものはありません。</p>`}
+    <p class="sub">※ Muse版ではサーバーが無いため、「送る」はこの端末の中での疑似動作です。実際には他の端末へは届きません。</p>
+  ` : "";
+  el.innerHTML = `
+  <div class="card band-red"><h3>⑤ 便利な機能</h3>
+    ${adminBlocks}
+
     <h4>📤 データを管理者に送る</h4>
     <div class="steps">
       <div class="step"><span class="no">1</span><div class="st-body"><b>名前を入れる</b><br><input id="sendName" placeholder="あなたの名前" style="width:180px"></div></div>
@@ -833,10 +910,6 @@ function render5() {
       <div class="arrowd">▼</div>
       <div class="resultbox">✅ 送ると管理者に届きます。管理者が確認して、必要ならデフォルトに登録します。</div>
     </div>
-
-    <h4 class="mt">📥 届いたデータ・要望（管理者用）</h4>
-    ${inboxRows || `<p class="sub">届いているものはありません。</p>`}
-    <p class="sub">※ Muse版ではサーバーが無いため、「送る」はこの端末の中での疑似動作です。実際には他の端末へは届きません。</p>
 
     <h4 class="mt">🔄 ファイル変換</h4>
     <p class="sub">PDF → Excel：表をExcelで開きたいときは、下のボタンでCSV（Excelで開けるファイル）を出すのが確実です。<br>
@@ -850,7 +923,7 @@ function render5() {
     ${fbRows}
 
     <h4 class="mt">🤖 オートモード</h4>
-    <p class="sub">オンにすると、ポップアップが順に開いて「希望休の印刷 → 休みの入力 → 自動作成 → 表の確認 → 採用 → 印刷」まで案内します（入力欄は大きく表示されます）。途中いつでも「ここからは手動で進める」で抜けられます。データは通常モードと共通です。</p>
+    <p class="sub">設定はオン／オフだけです。オンにしておくと、②「希望休の表」のタブを開いたときに、ポップアップの案内が自動で始まります（希望休の印刷 → 休みの入力 → 自動作成 → 表の確認 → 採用 → 印刷。入力欄は大きく表示されます）。途中の「ここからは手動で進める」を押すと通常の画面に戻ります（設定はオンのままです）。採用済みの月では案内は始まりません。データは通常モードと共通です。</p>
     <button class="btn ${state.autoMode ? "primary" : ""}" onclick="App.autoToggle()">オートモード：${state.autoMode ? "オン" : "オフ"}</button>
   </div>`;
 }
@@ -859,27 +932,30 @@ function render5() {
 function renderAdmin() {
   const md = document.getElementById("adminModal");
   const base = state.baseName, d = state.defaults[base];
-  const userRows = state.users.map((u, i) => `<div class="flex" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0">
-    <span>${u.role === "開発者" ? "👑" : u.role === "管理者" ? "🔑" : "📩"} ${esc(u.email)}（${esc(u.role)}）</span>
-    ${u.protected ? "" : `<button class="btn" onclick="App.userRemove(${i})">🗑 削除${u.role === "管理者" ? "（外す）" : ""}</button>`}</div>`).join("");
+  const cu = currentUser();
+  const userRows = state.users.map((u, i) => {
+    const icon = u.role === "開発者" ? "👑" : u.role === "管理者" ? "🔑" : "📧";
+    return `<div class="flex" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0">
+    <span>${i + 1}. ${icon} ${esc(u.email)}</span>
+    ${u.protected ? "" : `<button class="btn" onclick="App.userRemove(${i})">削除${u.role === "管理者" ? "（外す）" : ""}</button>`}</div>`;
+  }).join("");
   const adminRows = state.users.filter(u => u.role === "管理者").map(u => `<div class="flex" style="justify-content:space-between;padding:5px 0"><span>🔑 ${esc(u.email)}</span></div>`).join("");
   const baseRows = state.bases.map(b => `<div class="flex" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0">
     <span>${esc(b)}${b === state.baseName ? "（この端末）" : ""}</span>
     <button class="btn" onclick="App.baseDelete('${esc(b)}')">削除</button></div>`).join("");
   md.innerHTML = `
   <div class="flex" style="justify-content:space-between"><h3>🔑 管理者メニュー</h3><button class="btn" onclick="App.closeAdmin()">閉じる</button></div>
-  <p class="sub">あなたはソフト開発者です</p>
+  <p class="sub">あなたは${cu.role === "開発者" ? "ソフト開発者" : "管理者"}です（${esc(cu.email)}）</p>
   <div class="card" style="border:2px solid var(--red)"><h3>📺 管理者メニューの動画</h3>
-    <p class="sub">動画③「データ移動と管理者メニュー」です。このページの中で再生できます（音が出ます）。</p>
-    <video id="admVid" class="vid" controls preload="none" playsinline></video>
-    <div class="btnrow"><button class="btn primary" onclick="App.playVideo(this,'admVid','videos/video3.mp4.b64')">▶ 動画を読み込んで再生</button></div></div>
+    <p class="sub">動画は作り直し中です</p></div>
   <div class="card band-gray"><h3>🖨 管理者の使い方（印刷用）</h3>
     <p class="sub">管理者の仕事は「登録利用者」と「拠点のデータ」の管理です。困ったときは ⑤「便利な機能」の説明も見てください。</p></div>
   <div class="card band-blue"><h3>👥 登録利用者</h3>
     <p class="sub">ここに入れたメールの人だけが、ログインして使えます。</p>
     <div class="flex"><input id="admUserMail" type="email" placeholder="メールアドレス" style="flex:1">
-    <button class="btn blue" onclick="App.userAdd()">追加</button></div>
-    <div class="mt">${userRows}</div></div>
+    <button class="btn primary" onclick="App.userAdd()">追加</button></div>
+    <div class="mt">${userRows}</div>
+    <p class="sub">👑 ソフト開発者　🔑 管理者　📧 登録利用者</p></div>
   <div class="card band-orange"><h3>📦 拠点のデータ</h3>
     <p class="sub">登録したデータが「デフォルト」になり、その拠点を選んだ人全員に自動で入ります。</p>
     <div class="flex"><label>拠点：<select id="admBaseSel">${state.bases.map(b => `<option ${b === base ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label></div>
@@ -950,12 +1026,16 @@ function doAdopt() {
 }
 
 /* ---------------- オートモード（ポップアップで進めるウィザード） ----------------
-* 作業リスト項目11の本格版。ポップアップが順に開き、②希望休の表の印刷 →
-* ③休みの入力（大きく表示したグリッドをタップ）→ ④自動作成（進行文つき）→
-* A案/B案の確認 → 採用 → 印刷の案内、と進める。どのポップアップにも
-* 「ここからは手動で進める」を置く。データは通常モードと同一の state を使う。 */
+* 作業リスト項目11＋仕様訂正：オートモードは⑤の「設定」（オン/オフ）。
+* オン状態で②タブを開くと、この案内が自動で始まる（採用済みの月は除く）。
+* ポップアップが順に開き、②希望休の表の印刷 → ③休みの入力（大きく表示した
+* グリッド＋全体休・繁忙/閑散・必要人数もポップアップの中）→ ④自動作成
+* （進行文つき）→ A案/B案の確認 → 採用 → 印刷の案内、と進める。
+* どのポップアップにも「ここからは手動で進める」を置き、押すと通常画面に
+* 戻る（設定はオンのまま。次に②を開き直すとまた案内が始まる）。
+* データは通常モードと同一の state を使う。 */
 let wizStep = 0;
-function openWizard() { wizStep = 0; renderWizard(); document.getElementById("wizOverlay").classList.add("show"); }
+function openWizard() { wizStep = 0; document.getElementById("wizOverlay").classList.add("show"); renderWizard(); }
 function closeWizard() { document.getElementById("wizOverlay").classList.remove("show"); }
 function wizFoot(buttons) {
   return `<div class="btnrow wizfoot">${buttons}<button class="btn" onclick="App.wizManual()">ここからは手動で進める</button></div>`;
@@ -973,10 +1053,24 @@ function renderWizard() {
       wizFoot(`<button class="btn primary" onclick="App.wizGo(1)">次へ：③ 休みの入力 →</button>`);
   } else if (wizStep === 1) {
     const bal = balanceText(ym);
+    const mdW = monthData(ym), DW = daysIn(ym), zenW = zentaiSet(ym);
+    const reqChips = Array.from({ length: DW }, (_, i) => i + 1).filter(d => !zenW.has(d)).map(d => {
+      const v = (mdW.dayRequired || {})[d];
+      return `<span class="chip">${d}日 <input type="number" min="0" max="${state.members.length}" value="${v == null ? "" : v}" placeholder="指定なし" onchange="App.wizSetDayRequired(${d},this.value)" style="width:64px"></span>`;
+    }).join("");
     body = `<p class="sub">${ymLabel(ym)} の休みを入力します。マスをタップすると「休」→「希（希望休）」→「有（有休）」→ 空白 と変わります。②の表で集めた希望休をここに入れてください。</p>
       <div class="wizgrid">${inputGridHTML(ym, { prev: "App.wizPrevCell", cell: "App.wizCell" })}</div>
       <div class="mt ${bal.ok ? "greentext" : "warntext"}">この月の延べ出勤 ${bal.expectWork}人日（1日平均 ${bal.avg}人）／必要：最低 ${bal.minNeed}人日 〜 最大 ${bal.maxNeed}人日<br>
-      ${bal.ok ? "釣り合っています。" : "釣り合っていません。休みの数を見直してください。"}</div>` +
+      ${bal.ok ? "釣り合っています。" : "釣り合っていません。休みの数を見直してください。"}</div>
+      <h4 class="mt">全体休・祝日の指定</h4>
+      <p class="sub">日付をタップすると「祝（祝日）」→「全（全体休）」→ 元に戻る、と変わります。</p>
+      ${calChips(ym, "zentai", "App.wizChip")}
+      <h4 class="mt">繁忙日・閑散日の指定</h4>
+      <p class="sub">日付をタップすると 普通 →「繁（繁忙日）」→「閑（閑散日）」→ 普通 と変わります。</p>
+      ${calChips(ym, "busy", "App.wizChip")}
+      <h4 class="mt">指定日の必要人数</h4>
+      <p class="sub">特定の日だけ「この日は必ず○人出勤」と決めたいときに入力してください。空欄は指定なしです。</p>
+      <div>${reqChips}</div>` +
       wizFoot(`<button class="btn" onclick="App.wizGo(0)">← 戻る</button><button class="btn primary" onclick="App.wizGo(2)">次へ：④ 自動作成 →</button>`);
   } else if (wizStep === 2) {
     const has = !!(sh.plans && (sh.plans.A || sh.plans.B));
@@ -1039,23 +1133,7 @@ function wizSolveRun() {
 function rerender() { save(); renderHeader(); renderTab(state.ui.tab); }
 const App = {
   go(n) { gotoTab(n); },
-  /* 説明動画：リポジトリには Base64 化した動画を同梱し、タップで復元してページ内再生する */
-  _vidUrls: {},
-  playVideo(btn, vidId, path) {
-    const v = document.getElementById(vidId);
-    if (!v) return;
-    if (this._vidUrls[path]) { v.src = this._vidUrls[path]; v.play(); return; }
-    btn.disabled = true; const old = btn.textContent; btn.textContent = "読み込み中…";
-    fetch(path).then(r => { if (!r.ok) throw new Error("http " + r.status); return r.text(); })
-      .then(b64 => {
-        const s = b64.replace(/\s+/g, ""), bin = atob(s), bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const url = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
-        this._vidUrls[path] = url; v.src = url; v.play();
-        btn.textContent = "▶ 再生中（止める時は動画のボタンを）";
-      })
-      .catch(() => { toast("動画を読み込めませんでした"); btn.disabled = false; btn.textContent = old; });
-  },
+  openAdmin() { openAdmin(); },
   setMonth(ym) { state.ui.month = ym; monthData(ym); rerender(); },
   paperChange() {
     const s = document.querySelector("[id^=paperSize]"), o = document.querySelector("[id^=paperOri]");
@@ -1124,6 +1202,16 @@ const App = {
     save(); App.orgOrder(); renderHeader();
   },
   setLong(i, key, val) { state.longHolidays[i][key] = val; rerender(); },
+  addLongWork(i) {
+    const inp = document.getElementById("longWork" + i);
+    const v = inp ? inp.value : "";
+    if (!v) { toast("出勤日にする日を選んでください"); return; }
+    const h = state.longHolidays[i];
+    const arr = (h.work || "").split(/[,、\s]+/).filter(Boolean);
+    if (!arr.includes(v)) arr.push(v);
+    h.work = arr.sort().join(",");
+    rerender();
+  },
   addLong() { state.longHolidays.push({ name: "", from: "", to: "", work: "" }); rerender(); },
   delLong(i) { state.longHolidays.splice(i, 1); rerender(); },
   /* ② */
@@ -1138,30 +1226,14 @@ const App = {
   },
   printKibou() { App.paperChange(); openPrint("kibou", state.ui.month, null); },
   /* ③ */
-  chip(mode, d) {
-    const ym = state.ui.month, md = monthData(ym);
-    if (mode === "zentai") {
-      const hol = md.holidays.includes(d), zen = md.zentai.includes(d);
-      if (!hol && !zen) md.holidays.push(d);
-      else if (hol) { md.holidays = md.holidays.filter(x => x !== d); md.zentai.push(d); }
-      else md.zentai = md.zentai.filter(x => x !== d);
-    } else {
-      const b = md.busy.includes(d), q = md.quiet.includes(d);
-      if (!b && !q) md.busy.push(d);
-      else if (b) { md.busy = md.busy.filter(x => x !== d); md.quiet.push(d); }
-      else md.quiet = md.quiet.filter(x => x !== d);
-    }
-    rerender();
-  },
+  chip(mode, d) { toggleChipState(mode, d); rerender(); },
+  wizChip(mode, d) { toggleChipState(mode, d); renderWizard(); },
   cell(id, d) { cycleInputCell(id, d); render3(); },
   wizCell(id, d) { cycleInputCell(id, d); renderWizard(); },
   prevCell(id, i) { cyclePrevCell(id, i); render3(); },
   wizPrevCell(id, i) { cyclePrevCell(id, i); renderWizard(); },
-  setDayRequired(d, v) {
-    const md = monthData(state.ui.month);
-    if (v === "" || v == null) delete md.dayRequired[d]; else md.dayRequired[d] = parseInt(v, 10);
-    rerender();
-  },
+  setDayRequired(d, v) { setDayRequiredState(d, v); rerender(); },
+  wizSetDayRequired(d, v) { setDayRequiredState(d, v); renderWizard(); },
   clearMonth() {
     const ym = state.ui.month;
     showConfirm("入力を消す", `<p>${ymLabel(ym)} の休みの入力（希望休・全体休・繁忙日など）を全部消しますか？</p>`,
@@ -1325,15 +1397,16 @@ const App = {
     a.download = "shift-" + ym + ".csv"; a.click(); URL.revokeObjectURL(a.href);
   },
   autoToggle() {
+    /* オートモードは設定：オン/オフを保存するだけ。その場ではウィザードは始めない。
+    * オン状態で②タブを開いたときに案内が自動で始まる（gotoTab 参照） */
     state.autoMode = !state.autoMode;
-    if (state.autoMode) { save(); renderHeader(); render5(); openWizard(); }
-    else { closeWizard(); rerender(); toast("オートモードを切りました。手動で進めてください"); }
+    if (!state.autoMode) closeWizard();
+    rerender();
+    toast(state.autoMode ? "オートモードをオンにしました。②のタブを開くと案内が始まります" : "オートモードを切りました。手動で進めてください");
   },
-  guideOpen() { if (state.autoMode) openWizard(); },
-  guideOff() { state.autoMode = false; closeWizard(); rerender(); toast("オートモードを切りました。手動で進めてください"); },
   /* オートモードのウィザード操作 */
   wizGo(n) { wizStep = n; renderWizard(); },
-  wizManual() { state.autoMode = false; closeWizard(); rerender(); toast("手動で進めてください"); },
+  wizManual() { closeWizard(); toast("手動で進めてください"); },
   wizClose() { closeWizard(); },
   wizSolve() { wizSolveRun(); },
   wizAdopt() { if (doAdopt()) { wizStep = 4; renderWizard(); } },
@@ -1370,7 +1443,7 @@ const App = {
     const u = state.users[i];
     if (u.protected) { toast("ソフト開発者は外せません"); return; }
     if (u.role === "管理者") {
-      showConfirm("注意", `<p>管理者 ${esc(u.email)} を外しますか？外すと拠点のデータを変えられなくなります。</p>`,
+      showConfirm("注意", `<p>管理者 ${esc(u.email)} を外しますか？<br>管理者どうしで外し合うと、だれも管理できなくなることがあります。外すと、その人は拠点のデータを変えられなくなります。</p>`,
         [{ label: "やめる" }, { label: "外す", cls: "primary", fn() { state.users.splice(i, 1); save(); renderAdmin(); renderHeader(); } }]);
     } else { state.users.splice(i, 1); save(); renderAdmin(); }
   },
@@ -1434,7 +1507,7 @@ document.getElementById("tabNav").addEventListener("click", e => {
 });
 let fitTimer = null; // 画面幅が変わったら印刷イメージの縮小率を合わせ直す
 window.addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitPaperScales, 120); });
-document.getElementById("btnAdmin").addEventListener("click", renderAdmin);
+document.getElementById("btnAdmin").addEventListener("click", openAdmin);
 document.getElementById("adminOverlay").addEventListener("click", e => { if (e.target.id === "adminOverlay") App.closeAdmin(); });
 document.getElementById("btnReload").addEventListener("click", () => { location.reload(); }); // 「最新」＝最新版チェック相当（再読み込み）
 function applyTheme(light) {

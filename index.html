@@ -22,9 +22,9 @@ Claude製ツールのコードは一切見ず・コピーせず、仕様メモ�
 - メール＋6桁番号の登録・ログイン、登録利用者の管理、拠点データの自動配布、
 「データを管理者に送る」の送信は、サーバーが無いため端末内だけの疑似動作。
 画面と文言は本家に寄せてあるが、他の端末・他の人には実際には届かない。
-- 説明動画3本（作業リスト12・13）は作り直してサイト内に内蔵した。拠点名は決め打ちせず、
-  日本語ナレーション付きのイラスト動画。GitHubへの保存形式の都合で動画は Base64 化して
-  同梱し、▶ ボタンで読み込んで <video> でページ内再生する。YouTubeリンクは置いていない。
+- 説明動画は撤去した（2026-11-08 第2弾）。動画は全修正が終わった最終形の画面で
+  作り直すのが決まった順番のため、それまでは置かない。はじめての方へは文章のみ。
+  管理者メニューの動画カードも「作り直し中」の一文だけにした。
 - ポップアップは本家ツールの語彙に統一した（緑チェックの✅モーダル／確認モーダル／
   進行・結果の1行表示）。オートモードはポップアップで順に案内するウィザード式
   （作業リスト11の本格版：②印刷→③入力→④自動作成→確認→採用→印刷案内）。
@@ -61,9 +61,6 @@ select.base{background:var(--card2);color:var(--text);border-color:var(--border)
 /* はじめての方へ・お知らせ */
 .bar{margin:10px 12px 0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px}
 .bar summary{cursor:pointer;font-weight:700}
-video.vid{width:100%;background:#000;border-radius:8px;display:block}
-.viditem{margin:14px 0}
-.viditem .vtitle{font-weight:700;margin-bottom:6px}
 .notice{background:#4a3512;border:1px solid #a8742c;color:#ffe1a8;border-radius:10px;padding:10px 12px;margin:10px 12px 0}
 /* タブ */
 nav.tabs{display:flex;gap:6px;padding:12px 12px 0;flex-wrap:wrap}
@@ -128,6 +125,10 @@ table.grid td.num{background:#fafafa}
 .cal.dcell.busy{background:#5a1d20;color:#ffb3b8;font-weight:700}
 .cal.dcell.quiet{background:#173d27;color:#7fe0a8;font-weight:700}
 .cal.dcell.blank{visibility:hidden}
+/* 横長テーブルのオート表示（横いっぱい）：固定レイアウトで描いた中身を
+* transform: scale() でカード幅に合わせて縮小し、横スクロールなしで全体を見せる */
+.fitScale{position:relative;overflow:hidden;margin:10px 0}
+.fitInner{transform-origin:0 0;width:max-content}
 /* 印刷イメージ（白背景） */
 .paper{background:#fff;color:#222;border-radius:6px;padding:14px;margin:10px 0}
 .paperScale{position:relative;overflow:hidden;margin:10px 0}
@@ -143,6 +144,22 @@ table.grid td.num{background:#fafafa}
 table.mtab{border-collapse:collapse;width:100%;font-size:13px}
 table.mtab th,table.mtab td{border:1px solid var(--border);padding:6px;vertical-align:top}
 table.mtab th{background:#141419;text-align:left;white-space:nowrap}
+/* ①条件表：横長テーブル＋横スクロール、左3列（社員番号・名前・所属）は固定 */
+table.ctab{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+table.ctab th,table.ctab td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;vertical-align:middle;white-space:nowrap}
+table.ctab thead th{background:#141419;text-align:left;border-top:1px solid var(--border)}
+table.ctab th:first-child,table.ctab td:first-child{border-left:1px solid var(--border)}
+table.ctab .stk{position:sticky;z-index:2;background:var(--card2)}
+table.ctab thead .stk{z-index:3;background:#141419}
+table.ctab .stk1{left:0;min-width:78px}
+table.ctab .stk2{left:78px;min-width:96px}
+table.ctab .stk3{left:174px;min-width:78px;box-shadow:8px 0 8px -8px rgba(0,0,0,.6)}
+table.ctab select{max-width:132px}
+body.light table.ctab .stk{background:#f4f4f6}
+body.light table.ctab thead .stk,body.light table.ctab thead th{background:#eef0f3}
+input.tobi{width:20px;height:20px;accent-color:#2f6fd0;vertical-align:middle}
+.dellink{background:none;border:none;color:#ff8f96;font-weight:700;font-size:14px;padding:4px 6px}
+body.light .dellink{color:#c0272d}
 .wdchip{display:inline-block;border:1px solid var(--border);background:#141419;border-radius:6px;padding:3px 7px;margin:1px;cursor:pointer;font-size:13px}
 .wdchip.on{background:var(--red);color:#fff;font-weight:700}
 @media (max-width:899px){
@@ -273,16 +290,7 @@ body>*{display:none!important}
 <p><b>登録の流れ（本家の手順）：</b>メールアドレスを入れる → 届いた6桁の番号を入れる → 「はじめる」→ 拠点（八王子・東村山・瑞穂）を選ぶ → その拠点のデータが自動で入ります。ログインは約1か月そのまま使えます。</p>
 <p><b>注意：</b>ホーム画面のアイコンを消すと、この端末に保存されたデータも消えてしまいます。アイコンは消さないでください。名前などのデータはこの端末の中にだけ保存され、ネットには送られません。</p>
 <p class="small">※ Muse版では、登録・ログインと拠点データの自動配布はサーバーが無いため端末内だけの疑似動作です（詳しくは ⑤「便利な機能」）。</p>
-<p><b>📺 使い方の動画</b>（音が出ます。このページの中で再生できます）</p>
-<div class="viditem"><div class="vtitle">動画① はじめかた ― 登録・ログインの流れ</div>
-<video id="vid1" class="vid" controls preload="none" playsinline></video>
-<div class="btnrow"><button class="btn primary" onclick="App.playVideo(this,'vid1','videos/video1.mp4.b64')">▶ 動画①を読み込んで再生</button></div></div>
-<div class="viditem"><div class="vtitle">動画② 毎月のシフト表の作り方（①→②→③→④）</div>
-<video id="vid2" class="vid" controls preload="none" playsinline></video>
-<div class="btnrow"><button class="btn primary" onclick="App.playVideo(this,'vid2','videos/video2.mp4.b64')">▶ 動画②を読み込んで再生</button></div></div>
-<div class="viditem"><div class="vtitle">動画③ データ移動と管理者メニュー</div>
-<video id="vid3" class="vid" controls preload="none" playsinline></video>
-<div class="btnrow"><button class="btn primary" onclick="App.playVideo(this,'vid3','videos/video3.mp4.b64')">▶ 動画③を読み込んで再生</button></div></div>
+<p class="small">※ 使い方の動画は、画面の直しが全部終わってから作り直します（今は置いていません）。</p>
 </div>
 </details>
 
