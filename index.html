@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回送員シフト表ツール（Muse版）</title>
+<!--
+回送員シフト表ツール「Muse版」
+Claude製ツールのコードは一切見ず・コピーせず、仕様メモ（shift-repro/spec-notes.md）
+と作業リスト14項目だけからゼロで作った再現実装。
+データはこの端末のブラウザ（localStorage）にだけ保存される。
+
+- メール＋6桁番号の登録・ログイン、登録利用者の管理、拠点データの自動配布、
+「データを管理者に送る」の送信は、サーバーが無いため端末内だけの疑似動作。
+画面と文言は本家に寄せてあるが、他の端末・他の人には実際には届かない。
+- 動画3本の作り直し・サイト内埋め込み（作業リスト12・13）は未実装（プレースホルダのみ）。
+-->
+<style>
+:root{
+--bg:#121216; --card:#1f1f26; --card2:#26262f; --border:#3b3b47;
+--text:#f0f0f2; --sub:#b9b9c4; --red:#d2363c; --red-d:#a3242a;
+--blue:#2f6fd0; --orange:#e8862e; --green:#2e9e5b; --purple:#7a4fd0;
+--pink:#f6d0d6; --bluebg:#d6e4f7; --graybg:#d9d9de;
+--markred:#c0272d; --markblue:#2456c8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:15px;background:#141419;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 9px}
+textarea{width:100%;line-height:1.5}
+a{color:#7db3ff}
+/* ヘッダー */
+header{background:var(--card);padding:10px 14px 8px;border-bottom:2px solid var(--border)}
+.hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+/* ロゴはステッカー形：左に赤い縦ブロック＋黒帯に白文字 */
+.sticker{display:flex;align-items:stretch;border:2px solid #fff;border-radius:7px;overflow:hidden;box-shadow:0 2px 7px rgba(0,0,0,.45);flex:none}
+.sticker .stk-r{width:16px;background:var(--red);flex:none}
+.sticker .stk-t{background:#101013;color:#fff;font-weight:800;font-size:19px;letter-spacing:.1em;padding:6px 13px;white-space:nowrap}
+.basename{font-size:27px;font-weight:800;letter-spacing:.06em}
+.hbtns{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hbtn2{border:1px solid var(--border);background:var(--card2);color:var(--text);border-radius:999px;padding:8px 14px;font-size:14px;font-weight:700;position:relative}
+.hbtn2 .bdg{position:absolute;top:-6px;right:-2px;font-size:13px}
+.ver{font-size:11.5px;color:var(--sub);text-align:right;width:100%}
+select.base{background:var(--card2);color:var(--text);border-color:var(--border);font-size:13px;padding:4px 6px}
+/* はじめての方へ・お知らせ */
+.bar{margin:10px 12px 0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px}
+.bar summary{cursor:pointer;font-weight:700}
+.notice{background:#4a3512;border:1px solid #a8742c;color:#ffe1a8;border-radius:10px;padding:10px 12px;margin:10px 12px 0}
+/* タブ */
+nav.tabs{display:flex;gap:6px;padding:12px 12px 0;flex-wrap:wrap}
+nav.tabs button{flex:1 1 150px;padding:12px 6px;border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:none;background:#2a2a33;color:var(--text);font-size:15px;font-weight:700}
+nav.tabs button.active{background:var(--red);border-color:var(--red-d)}
+main{padding:0 12px 40px}
+section.tabpage{display:none;background:var(--card);border:1px solid var(--border);border-radius:0 10px 10px 10px;padding:14px}
+section.tabpage.show{display:block}
+/* カード */
+.card{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:14px 0}
+.card h3{margin:2px 0 10px;font-size:17px}
+.card h4{margin:8px 0 6px}
+.band-red{border-left:8px solid var(--red)}
+.band-blue{border-left:8px solid var(--blue)}
+.band-orange{border-left:8px solid var(--orange)}
+.band-green{border-left:8px solid var(--green)}
+.band-purple{border-left:8px solid var(--purple)}
+.band-gray{border-left:8px solid #777}
+.sub{color:var(--sub);font-size:13px;line-height:1.6}
+.small{font-size:13px}
+.redtext{color:#ff8f96}
+.greentext{color:#7fe0a8}
+.warntext{color:#ffd27d}
+/* ボタン */
+.btn{background:#34343f;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 14px;font-size:14px}
+.btn:hover{filter:brightness(1.2)}
+.btn.primary{background:var(--red);border-color:var(--red-d);font-weight:700}
+.btn.blue{background:var(--blue);border-color:#2456a3;font-weight:700}
+.btn.green{background:var(--green);border-color:#227347;font-weight:700}
+.btn.orange{background:var(--orange);border-color:#b96a1f;font-weight:700;color:#1c1206}
+.btn.big{font-size:17px;padding:13px 20px;width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.chip{display:inline-block;padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:#141419;font-size:13px;margin:2px}
+.chip.on{background:var(--red);border-color:var(--red-d);color:#fff;font-weight:700}
+.chip.blue.on{background:var(--blue);border-color:#2456a3}
+/* 表（グリッド） */
+.gwrap{overflow-x:auto;padding-bottom:6px}
+table.grid{border-collapse:collapse;background:#fff;color:#222;font-size:13px}
+table.grid th,table.grid td{border:1px solid #9a9a9a;text-align:center;padding:0;min-width:24px;height:28px}
+table.grid th{background:#f0f0f0;font-weight:600;padding:2px 3px}
+table.grid td.cell{cursor:pointer;user-select:none}
+table.grid td.fixed{cursor:default}
+table.grid td.prev{background:#c9c9cf;color:#333}
+table.grid td.sat,table.grid th.sat{color:var(--markblue)}
+table.grid td.sun,table.grid th.sun{color:var(--markred)}
+td.m-ko{background:var(--pink)!important;color:var(--markred);font-weight:700}
+td.m-ki{background:var(--pink)!important;color:var(--markred);font-weight:700;box-shadow:inset 0 0 0 2px var(--markred)}
+td.m-yu{background:var(--bluebg)!important;color:var(--markblue);font-weight:700}
+td.m-zen{background:var(--graybg)!important;color:#222;font-weight:700}
+td.weeksep{border-right:2px dotted var(--markred)!important}
+table.grid td.name,table.grid th.name{text-align:left;padding:2px 6px;white-space:nowrap;background:#fafafa}
+table.grid td.num{background:#fafafa}
+/* 日付チップ（カレンダー並び） */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:560px}
+.cal.dow{text-align:center;font-weight:700;font-size:13px;padding:2px}
+.cal.dcell{border:1px solid var(--border);background:#141419;border-radius:8px;padding:7px 2px;text-align:center;cursor:pointer;font-size:14px;line-height:1.35}
+.cal.dcell.st{display:block;font-size:12px;min-height:15px}
+.cal.dcell.sat{color:#7db3ff}.cal.dcell.sun{color:#ff8f96}
+.cal.dcell.zen{background:#e8e8ec;color:#222;font-weight:700}
+.cal.dcell.hol{background:#3d2b12;color:#ffd27d}
+.cal.dcell.busy{background:#5a1d20;color:#ffb3b8;font-weight:700}
+.cal.dcell.quiet{background:#173d27;color:#7fe0a8;font-weight:700}
+.cal.dcell.blank{visibility:hidden}
+/* 印刷イメージ（白背景） */
+.paper{background:#fff;color:#222;border-radius:6px;padding:14px;margin:10px 0}
+.paper h2{margin:0;font-size:20px}
+.paper.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.paper.plogo{font-weight:800;color:#a3242a;font-size:14px;text-align:right}
+.txt-red{border:2px solid var(--markred);color:var(--markred);border-radius:6px;padding:8px 10px;font-weight:700;margin:8px 0}
+.txt-black{border:2px solid #222;border-radius:6px;padding:8px 10px}
+.txt-flex{display:flex;gap:10px;flex-wrap:wrap}
+.txt-flex>div{flex:1 1 280px}
+/* ①メンバー表：PCは横長テーブル、スマホはカード */
+table.mtab{border-collapse:collapse;width:100%;font-size:13px}
+table.mtab th,table.mtab td{border:1px solid var(--border);padding:6px;vertical-align:top}
+table.mtab th{background:#141419;text-align:left;white-space:nowrap}
+.wdchip{display:inline-block;border:1px solid var(--border);background:#141419;border-radius:6px;padding:3px 7px;margin:1px;cursor:pointer;font-size:13px}
+.wdchip.on{background:var(--red);color:#fff;font-weight:700}
+@media (max-width:899px){
+/* iPhoneで入力欄が勝手にズームして崩れるのを防ぐ（作業リスト3番の簡易対応） */
+input,select,textarea{font-size:16px}
+table.mtab,table.mtab tbody,table.mtab tr,table.mtab td{display:block;width:100%}
+table.mtab thead{display:none}
+table.mtab tr{border:1px solid var(--border);border-radius:10px;margin:10px 0;padding:6px;background:#141419}
+table.mtab td{border:none;padding:4px 6px}
+table.mtab td::before{content:attr(data-label);display:block;font-size:11px;color:var(--sub)}
+}
+/* モーダル */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;z-index:50;overflow-y:auto}
+.overlay.show{display:block}
+.modal{max-width:760px;margin:26px auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+.modal h3{margin-top:0}
+.qrbox{width:110px;height:110px;background:#fff;color:#222;display:flex;align-items:center;justify-content:center;font-size:12px;text-align:center;border-radius:6px;padding:6px}
+/* その他 */
+details.fold{background:#141419;border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:10px 0}
+details.fold summary{cursor:pointer;font-weight:700}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#2e9e5b;color:#fff;padding:11px 18px;border-radius:999px;font-weight:700;display:none;z-index:99;box-shadow:0 4px 18px rgba(0,0,0,.5)}
+.guidebar{position:fixed;left:0;right:0;bottom:0;background:#3d2b12;border-top:2px solid #a8742c;padding:10px 14px;z-index:40;display:none}
+.guidebar.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.progress{white-space:pre-line;background:#141419;border:1px solid var(--border);border-radius:8px;padding:10px 12px;line-height:1.7}
+.vlist{line-height:1.7;font-size:14px}
+input[type=number]{width:76px}
+.flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mt{margin-top:10px}.mb{margin-bottom:10px}
+/* 印刷イメージ（白い紙）の中の表 */
+.paper table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.6px solid #222}
+.paper th,.paper td{border:0.7px solid #222;text-align:center;font-size:12px;padding:0}
+.paper thead th{height:59px;line-height:29px;font-size:13px;font-weight:400}
+.paper .dn{font-size:17px;font-weight:700}
+.paper .dw{font-size:16px}
+.paper thead th.sun .dw{color:#D22634}
+.paper tbody td{height:39px;font-size:13px}
+.paper tfoot td{height:20px;font-size:16px;border:none}
+.paper tfoot td.weeksep{border-right:2px dotted #D22634}
+.paper th{background:#f0f0f0}
+.paper td.pname,.paper th.pname{text-align:left;padding-left:5px;font-weight:800;font-size:18px;white-space:nowrap;overflow:hidden}
+.paper td.porg{font-size:11px;white-space:nowrap}
+.paper td.pid{font-size:11px;white-space:nowrap}
+.paper td.cnt{font-size:17px}
+.paper .chipm{display:inline-block;width:20px;height:25px;line-height:25px;font-weight:700;font-size:14px;text-align:center;box-sizing:border-box;vertical-align:middle}
+.paper .m-ko{background:#F7CFD7;color:#D22634}
+.paper .m-ki{background:#F7CFD7;color:#D22634;border:1.6px solid #D22634}
+.paper .m-zen{background:#D9D9DB;color:#222}
+.paper .yuc{display:inline-block;width:21px;height:21px;line-height:21px;border:1.5px solid #D22634;border-radius:50%;font-weight:700;background:transparent;color:#D22634;text-align:center;box-sizing:border-box;vertical-align:middle}
+.paper .legend .chipm{width:17px;height:20px;line-height:20px;font-size:12px}
+.paper .legend .yuc{width:17px;height:17px;line-height:17px;font-size:12px}
+.paper td.weeksep{border-right:2px dotted #D22634}
+.paper .legend{font-size:11px;margin-top:6px}
+.paper .lg{display:inline-block;min-width:18px;padding:1px 3px;text-align:center;border:1px solid #9a9a9a}
+/* 印刷イメージ右上：小さいステッカー＋拠点名 */
+.pright{text-align:right}
+.pright .sticker{box-shadow:0 1px 4px rgba(0,0,0,.3);border:none;height:17px}
+.pright .sticker .stk-r{width:20px;background:#E8211A}
+.pright .sticker .stk-t{font-size:13px;padding:0 7px;line-height:17px;letter-spacing:.06em}
+.pright .pbase{font-weight:800;font-size:19px;margin-top:3px}
+/* ⑤ 手順カード */
+.steps{margin:10px 0}
+.step{display:flex;gap:10px;align-items:flex-start;background:#141419;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.step .no{background:var(--red);color:#fff;font-weight:800;border-radius:50%;width:26px;height:26px;text-align:center;line-height:26px;flex:none}
+.step .st-body{flex:1}
+.arrowd{text-align:center;color:var(--red);font-size:17px;line-height:1.15;margin:1px 0}
+.resultbox{background:#173d27;border:1px solid var(--green);border-radius:10px;padding:10px 12px;font-weight:700}
+/* ライトテーマ（body.light） */
+body.light{--bg:#e9e9ec;--card:#ffffff;--card2:#f4f4f6;--border:#c6c6cf;--text:#1c1c22;--sub:#55555f}
+body.light input,body.light select,body.light textarea{background:#fff;color:#1c1c22}
+body.light .chip,body.light .cal .dcell,body.light .wdchip,body.light details.fold,body.light .progress,body.light .step{background:#fff}
+body.light table.mtab th{background:#eef0f3}
+body.light nav.tabs button{background:#dcdce2;color:#1c1c22}
+body.light nav.tabs button.active{background:var(--red);color:#fff}
+body.light .bar{background:#fff8e1;border-color:#e3cf8f}
+body.light .cal .dcell.hol{background:#fff3d6}
+body.light .cal .dcell.busy{background:#ffe1e3}
+body.light .cal .dcell.quiet{background:#dff5e6}
+body.light .resultbox{background:#e4f6ea;color:#14532d}
+body.light .guidebar{color:#ffe1a8}
+.guidebar{color:#ffe1a8}
+@media (max-width:899px){body.light table.mtab tr{background:#fff}}
+#printFallback{display:none}
+@media print{
+body>*{display:none!important}
+#printFallback{display:block!important;color:#222}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<div class="hrow">
+<div class="sticker"><span class="stk-r"></span><span class="stk-t">いすゞ首都圏</span></div>
+<div class="basename" id="hBaseName">八王子</div>
+<select class="base" id="hBaseSel" title="拠点を切り替える"></select>
+<div class="hbtns">
+<button class="hbtn2" id="btnReload" title="最新版に更新">🔄 最新</button>
+<button class="hbtn2" id="btnTheme" title="表示の切り替え">☀️ ライト</button>
+<button class="hbtn2" id="btnAdmin" title="管理者メニュー">🔑 管理者メニュー<span class="bdg" id="adminBadge" style="display:none">📢</span></button>
+<div class="ver">シフト自動作成ツール　版 2026-11-08m（Muse版）</div>
+</div>
+</div>
+</header>
+
+<div id="updateNotice"></div>
+
+<details class="bar" id="hajimete">
+<summary>📖 はじめての方へ</summary>
+<div class="sub" style="color:var(--text)">
+<p>このツールは、回送員の月間シフト表を作るためのものです。使い方は ① → ② → ③ → ④ の順に進めます。</p>
+<p><b>登録の流れ（本家の手順）：</b>メールアドレスを入れる → 届いた6桁の番号を入れる → 「はじめる」→ 拠点（八王子・東村山・瑞穂）を選ぶ → その拠点のデータが自動で入ります。ログインは約1か月そのまま使えます。</p>
+<p><b>注意：</b>ホーム画面のアイコンを消すと、この端末に保存されたデータも消えてしまいます。アイコンは消さないでください。名前などのデータはこの端末の中にだけ保存され、ネットには送られません。</p>
+<p class="small">※ Muse版では、登録・ログインと拠点データの自動配布はサーバーが無いため端末内だけの疑似動作です（詳しくは ⑤「便利な機能」）。</p>
+<p class="small">📺 使い方の動画（はじめかた・使い方・管理者メニュー）は作り直し予定です。サイト内で ▶ ボタンで見られるようにする予定ですが、Muse版ではまだ未実装です。</p>
+</div>
+</details>
+
+<nav class="tabs" id="tabNav">
+<button data-tab="1">① 回送員・条件</button>
+<button data-tab="2">② 希望休の表</button>
+<button data-tab="3">③ 休みの入力</button>
+<button data-tab="4">④ シフト作成／印刷</button>
+<button data-tab="5">⑤ 便利な機能</button>
+</nav>
+
+<main>
+<section class="tabpage" id="page1"></section>
+<section class="tabpage" id="page2"></section>
+<section class="tabpage" id="page3"></section>
+<section class="tabpage" id="page4"></section>
+<section class="tabpage" id="page5"></section>
+</main>
+</div>
+
+<!-- 管理者メニュー -->
+<div class="overlay" id="adminOverlay"><div class="modal" id="adminModal"></div></div>
+<!-- 汎用確認モーダル -->
+<div class="overlay" id="confirmOverlay"><div class="modal" id="confirmModal" style="max-width:520px"></div></div>
+
+<div class="guidebar" id="guideBar"></div>
+<div class="toast" id="toast"></div>
+<div id="printFallback"></div>
+
+<script src="solver.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
