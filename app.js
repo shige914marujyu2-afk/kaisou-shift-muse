@@ -849,8 +849,9 @@ function renderAdmin() {
   <div class="flex" style="justify-content:space-between"><h3>🔑 管理者メニュー</h3><button class="btn" onclick="App.closeAdmin()">閉じる</button></div>
   <p class="sub">あなたはソフト開発者です</p>
   <div class="card" style="border:2px solid var(--red)"><h3>📺 管理者メニューの動画</h3>
-    <div class="flex"><div class="qrbox">QRコード<br>（動画リンク）</div>
-    <button class="btn primary" onclick="toast('動画は作り直し予定です（Muse版では未実装）')">▶ 動画を見る</button></div></div>
+    <p class="sub">動画③「データ移動と管理者メニュー」です。このページの中で再生できます（音が出ます）。</p>
+    <video id="admVid" class="vid" controls preload="none" playsinline></video>
+    <div class="btnrow"><button class="btn primary" onclick="App.playVideo(this,'admVid','videos/video3.mp4.b64')">▶ 動画を読み込んで再生</button></div></div>
   <div class="card band-gray"><h3>🖨 管理者の使い方（印刷用）</h3>
     <p class="sub">管理者の仕事は「登録利用者」と「拠点のデータ」の管理です。困ったときは ⑤「便利な機能」の説明も見てください。</p></div>
   <div class="card band-blue"><h3>👥 登録利用者</h3>
@@ -891,6 +892,23 @@ function renderAdmin() {
 function rerender() { save(); renderHeader(); renderTab(state.ui.tab); }
 const App = {
   go(n) { gotoTab(n); },
+  /* 説明動画：リポジトリには Base64 化した動画を同梱し、タップで復元してページ内再生する */
+  _vidUrls: {},
+  playVideo(btn, vidId, path) {
+    const v = document.getElementById(vidId);
+    if (!v) return;
+    if (this._vidUrls[path]) { v.src = this._vidUrls[path]; v.play(); return; }
+    btn.disabled = true; const old = btn.textContent; btn.textContent = "読み込み中…";
+    fetch(path).then(r => { if (!r.ok) throw new Error("http " + r.status); return r.text(); })
+      .then(b64 => {
+        const s = b64.replace(/\s+/g, ""), bin = atob(s), bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+        this._vidUrls[path] = url; v.src = url; v.play();
+        btn.textContent = "▶ 再生中（止める時は動画のボタンを）";
+      })
+      .catch(() => { toast("動画を読み込めませんでした"); btn.disabled = false; btn.textContent = old; });
+  },
   setMonth(ym) { state.ui.month = ym; monthData(ym); rerender(); },
   paperChange() {
     const s = document.querySelector("[id^=paperSize]"), o = document.querySelector("[id^=paperOri]");
