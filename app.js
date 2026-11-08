@@ -384,8 +384,9 @@ tbody td{height:24pt}
 `;
 }
 return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>印刷用シフト表</title><style>${css}</style></head>
-<body><div class="toolbar"><button onclick="window.print()">🖨 プリント（用紙 ${p.size}・${p.orient === "landscape"? "横": "縦"}）</button>
-<span>プリンターの画面で用紙と向きを合わせてください。そのままPDFに保存もできます。</span></div>
+<body><div class="toolbar"><button onclick="window.close();setTimeout(function(){if(!window.closed){if(history.length>1){history.back()}else{location.href='https://shige914marujyu2-afk.github.io/kaisou-shift-muse/'}}},350)">✕ 閉じて戻る</button>
+<button onclick="window.print()">🖨 プリント（用紙 ${p.size}・${p.orient === "landscape"? "横": "縦"}）</button>
+<span>プリンターの画面で用紙と向きを合わせてください。そのままPDFに保存もできます。印刷が終わったら「✕ 閉じて戻る」でアプリに戻ります。</span></div>
 ${sheetHTML(kind, ym, schedule)}
 <script>setTimeout(function(){},200)<\/script></body></html>`;
 }
