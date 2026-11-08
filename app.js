@@ -312,7 +312,7 @@ return `<div class="phead"><h2>${title}</h2><div class="pright"><span class="sti
 }
 function printDocHTML(kind, ym, schedule) {
 const p = state.paper;
-const css = `
+let css = `
 @page{size:${p.size} ${p.orient};margin:6mm 10.6mm 8mm}
 html,body{margin:0}
 body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;color:#222;padding-top:1mm;box-sizing:border-box}
@@ -355,6 +355,16 @@ td.cnt{font-size:12.5pt}
 .legend .chipm{width:13pt;height:15pt;line-height:15pt;font-size:9pt}
 .legend .yuc{width:13pt;height:13pt;line-height:13pt;font-size:9pt}
 `;
+if (kind === "kibou") {
+/* 希望休の表は、見出し文＋表＋注意書き2つ＋見本までを1枚に収めるため行を詰める（完成シフト表の実測29ptは変更しない） */
+css += `
+tbody td{height:24pt}
+.txt-red{margin:5pt 0;padding:5pt 7pt}
+.txt-black{padding:5pt 7pt}
+.txt-flex{margin-top:5pt}
+.legend{margin-top:4pt}
+`;
+}
 return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>印刷用シフト表</title><style>${css}</style></head>
 <body><div class="toolbar"><button onclick="window.print()">🖨 プリント（用紙 ${p.size}・${p.orient === "landscape"? "横": "縦"}）</button>
 <span>プリンターの画面で用紙と向きを合わせてください。そのままPDFに保存もできます。</span></div>
