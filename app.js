@@ -471,7 +471,8 @@ bar.classList.remove("show");
 
 /* ---------------- ① 回送員・条件 ----------------
 * 配列は本物ツールに合わせた（仕様メモ追記6）：横長テーブル＋横スクロール、
-* 左の社員番号・名前・所属は固定（sticky）。セレクトはネイティブ<select>。
+* 固定（sticky）は「名前」の列だけ。社員番号・所属は横スクロールで名前の下に
+* 滑って消える（本物の挙動）。セレクトはネイティブ<select>。
 * 条件の保存先は従来どおり state.perPerson（データ文字列の互換を維持）。 */
 function render1() {
 const el = document.getElementById("page1");
@@ -488,9 +489,9 @@ const rows = members.map(mem => {
 const p = personOf(mem.id);
 const wdChips = WD.map(w => `<span class="wdchip ${(p["毎週どれか休み"] || []).includes(w)? "on": ""}" onclick="App.toggleWeekly('${mem.id}','${w}')">${w}</span>`).join("");
 return `<tr>
-<td class="stk stk1">${esc(mem.id)}</td>
-<td class="stk stk2"><b>${esc(mem.name)}</b></td>
-<td class="stk stk3">${esc(mem.org)}</td>
+<td>${esc(mem.id)}</td>
+<td class="stk"><b>${esc(mem.name)}</b></td>
+<td>${esc(mem.org)}</td>
 <td>${wdChips}</td>
 <td>${selP(p["連勤数"] || "3連勤まで", ["指定無し", "3連勤まで", "4連勤まで"], `App.setPerson('${mem.id}','連勤数',this.value)`)}</td>
 <td>${selP(p["連休回数"] || "月1、2回", ["指定無し", "月1、2回", "月2回以上"], `App.setPerson('${mem.id}','連休回数',this.value)`)}</td>
@@ -502,7 +503,7 @@ return `<tr>
 </tr>`;
 }).join("");
 const pri = state.priority, pc = state.priorityCustom;
-const priRow = (label, key, def) => `<tr><td>${label}</td><td><input type="number" value="${pri[key]}" min="0" max="14" onchange="App.setPriority('${key}',this.value)" style="${pc[key]? "color:#ff8f96;border-color:#d2363c": ""}"></td></tr>`;
+const priRow = (label, key, def) => `<tr><td>${label}</td><td><input type="number" value="${pri[key]}" min="0" max="14" onchange="App.setPriority('${key}',this.value)"${pc[key]? " class=\"chg\"": ""}></td></tr>`;
 const bandFor = name => /GW|ゴールデン/.test(name || "")? "band-green": /お盆|盆/.test(name || "")? "band-orange": /年末|年始/.test(name || "")? "band-blue": "band-gray";
 const longCards = state.longHolidays.map((h, i) => `
 <div class="card ${bandFor(h.name)}">
@@ -528,7 +529,7 @@ el.innerHTML = `
 <div class="btnrow"><button class="btn primary" onclick="App.doBulk()">取り込む（一覧と入れ替える）</button></div>
 </div>
 <div class="gwrap mt"><table class="ctab"><thead><tr>
-<th class="stk stk1">社員番号</th><th class="stk stk2">名前</th><th class="stk stk3">所属</th><th>毎週どれか休み</th><th>連動数</th><th>連休回数</th><th>連休の日</th><th>月末/月初</th><th>飛び石なし</th><th>土日祝休</th><th>削除</th>
+<th>社員番号</th><th class="stk">名前</th><th>所属</th><th>毎週どれか休み</th><th>連動数</th><th>連休回数</th><th>連休の日</th><th>月末/月初</th><th>飛び石なし</th><th>土日祝休</th><th>削除</th>
 </tr></thead><tbody>${rows}</tbody></table></div>
 <p class="sub">入力するとすぐ保存されます。毎週どれか休み＝押した曜日のどれか1日を毎週休みにします（例：火・水）。連動数＝何連勤まで（5連勤は作りません）。連休回数＝月に何回連休を作るか。連休の日＝平日だけ/土日祝だけに作る。月末/月初＝月の最終日・翌月1日を休みにするか（「どちらか」は前の月の最終日が休みでなければ1日を休みに）。飛び石なし＝「休→出→休」を作りません。土日祝休＝土・日・祝日の休みを月に何日にするか（1〜3日/2〜4日）。名前はこのパソコン（スマホ）の中にだけ保存され、ネットには送られません。</p>
 </div>
@@ -632,7 +633,7 @@ function calChips(ym, mode, fnName) {
   const fn = fnName || "App.chip";
   const md = monthData(ym), D = daysIn(ym), first = dateOf(ym, 1);
   const lead = (first.getDay() + 7) % 7;
-  let cells = WD.map((w, i) => `<div class="dow" style="color:${i === 6 ? "#7db3ff" : i === 0 ? "#ff8f96" : "inherit"}">${w}</div>`).join("");
+  let cells = WD.map((w, i) => `<div class="dow${i === 6 ? " sat" : i === 0 ? " sun" : ""}">${w}</div>`).join("");
   for (let i = 0; i < lead; i++) cells += `<div class="dcell blank"></div>`;
   for (let d = 1; d <= D; d++) {
     const dt = dateOf(ym, d), zen = zentaiSet(ym).has(d), hol = (md.holidays || []).includes(d);

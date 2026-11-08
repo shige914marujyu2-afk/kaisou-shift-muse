@@ -87,16 +87,16 @@ section.tabpage.show{display:block}
 /* ボタン */
 .btn{background:#34343f;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 14px;font-size:14px}
 .btn:hover{filter:brightness(1.2)}
-.btn.primary{background:var(--red);border-color:var(--red-d);font-weight:700}
-.btn.blue{background:var(--blue);border-color:#2456a3;font-weight:700}
-.btn.green{background:var(--green);border-color:#227347;font-weight:700}
+.btn.primary{background:var(--red);border-color:var(--red-d);font-weight:700;color:#fff}
+.btn.blue{background:var(--blue);border-color:#2456a3;font-weight:700;color:#fff}
+.btn.green{background:var(--green);border-color:#227347;font-weight:700;color:#fff}
 .btn.orange{background:var(--orange);border-color:#b96a1f;font-weight:700;color:#1c1206}
 .btn.big{font-size:17px;padding:13px 20px;width:100%}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 .chip{display:inline-block;padding:5px 10px;border-radius:999px;border:1px solid var(--border);background:#141419;font-size:13px;margin:2px}
 .chip.on{background:var(--red);border-color:var(--red-d);color:#fff;font-weight:700}
-.chip.blue.on{background:var(--blue);border-color:#2456a3}
+.chip.blue.on{background:var(--blue);border-color:#2456a3;color:#fff}
 /* 表（グリッド） */
 .gwrap{overflow-x:auto;padding-bottom:6px}
 table.grid{border-collapse:collapse;background:#fff;color:#222;font-size:13px}
@@ -125,6 +125,9 @@ table.grid td.num{background:#fafafa}
 .cal.dcell.busy{background:#5a1d20;color:#ffb3b8;font-weight:700}
 .cal.dcell.quiet{background:#173d27;color:#7fe0a8;font-weight:700}
 .cal.dcell.blank{visibility:hidden}
+.cal .dow.sat{color:#7db3ff}
+.cal .dow.sun{color:#ff8f96}
+input.chg{color:#ff8f96;border-color:#d2363c}
 /* 横長テーブルのオート表示（横いっぱい）：固定レイアウトで描いた中身を
 * transform: scale() でカード幅に合わせて縮小し、横スクロールなしで全体を見せる */
 .fitScale{position:relative;overflow:hidden;margin:10px 0}
@@ -144,16 +147,14 @@ table.grid td.num{background:#fafafa}
 table.mtab{border-collapse:collapse;width:100%;font-size:13px}
 table.mtab th,table.mtab td{border:1px solid var(--border);padding:6px;vertical-align:top}
 table.mtab th{background:#141419;text-align:left;white-space:nowrap}
-/* ①条件表：横長テーブル＋横スクロール、左3列（社員番号・名前・所属）は固定 */
+/* ①条件表：横長テーブル＋横スクロール、固定は「名前」の列だけ（本物どおり）。
+* 社員番号・所属は横スクロールで名前の下に滑って消える */
 table.ctab{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
 table.ctab th,table.ctab td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;vertical-align:middle;white-space:nowrap}
 table.ctab thead th{background:#141419;text-align:left;border-top:1px solid var(--border)}
 table.ctab th:first-child,table.ctab td:first-child{border-left:1px solid var(--border)}
-table.ctab .stk{position:sticky;z-index:2;background:var(--card2)}
+table.ctab .stk{position:sticky;left:0;z-index:2;background:var(--card2);min-width:96px;box-shadow:8px 0 8px -8px rgba(0,0,0,.6)}
 table.ctab thead .stk{z-index:3;background:#141419}
-table.ctab .stk1{left:0;min-width:78px}
-table.ctab .stk2{left:78px;min-width:96px}
-table.ctab .stk3{left:174px;min-width:78px;box-shadow:8px 0 8px -8px rgba(0,0,0,.6)}
 table.ctab select{max-width:132px}
 body.light table.ctab .stk{background:#f4f4f6}
 body.light table.ctab thead .stk,body.light table.ctab thead th{background:#eef0f3}
@@ -250,11 +251,23 @@ body.light table.mtab th{background:#eef0f3}
 body.light nav.tabs button{background:#dcdce2;color:#1c1c22}
 body.light nav.tabs button.active{background:var(--red);color:#fff}
 body.light .bar{background:#fff8e1;border-color:#e3cf8f}
-body.light .cal .dcell.hol{background:#fff3d6}
-body.light .cal .dcell.busy{background:#ffe1e3}
-body.light .cal .dcell.quiet{background:#dff5e6}
+body.light .btn{background:#fff;color:#1c1c22}
+body.light a{color:#2456c8}
+body.light .redtext{color:#c0272d}
+body.light .greentext{color:#1c7a43}
+body.light .warntext{color:#8a5a00}
+body.light .notice{background:#fff3d6;border-color:#e3cf8f;color:#6b4e12}
+body.light .guidebar{background:#fff3d6;color:#6b4e12;border-top-color:#e3cf8f}
+body.light .cal .dcell.sat{color:var(--markblue)}
+body.light .cal .dcell.sun{color:var(--markred)}
+body.light .cal .dcell.hol{background:#fff3d6;color:#8a5a00}
+body.light .cal .dcell.busy{background:#ffe1e3;color:#a3242a}
+body.light .cal .dcell.quiet{background:#dff5e6;color:#1c7a43}
+body.light .cal .dow.sat{color:var(--markblue)}
+body.light .cal .dow.sun{color:var(--markred)}
+body.light input.chg{color:#c0272d}
+body.light table.ctab .stk{box-shadow:8px 0 8px -8px rgba(0,0,0,.35)}
 body.light .resultbox{background:#e4f6ea;color:#14532d}
-body.light .guidebar{color:#ffe1a8}
 .guidebar{color:#ffe1a8}
 @media (max-width:899px){body.light table.mtab tr{background:#fff}}
 #printFallback{display:none}
