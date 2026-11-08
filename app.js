@@ -376,7 +376,13 @@ const html = printDocHTML(kind, ym, schedule);
 document.getElementById("printFallback").innerHTML = sheetHTML(kind, ym, schedule);
 const w = window.open("", "_blank");
 if (w) { w.document.open(); w.document.write(html); w.document.close();}
-showConfirm("印刷", `<p>印刷用のページを新しいタブで開きました。<br><b>開いたページから印刷してください</b>（用紙 ${state.paper.size}・${state.paper.orient === "landscape"? "横": "縦"}）。</p>`, [{ label: "OK", cls: "primary"}]);
+/* 印刷後の案内は本家ツールと同じ出し分け：タッチ端末（iPhone等）は✅モーダル、PCは太字の1行表示 */
+if (isTouchDevice()) {
+showOk("", `<p>開いたPDFの共有ボタン→『プリント』で印刷してください</p>`, [{ label: "OK", cls: "primary"}]);
+} else {
+const note = document.getElementById("printNote");
+if (note) { note.textContent = "開いたPDFから印刷してください"; note.style.display = "block";}
+}
 }
 
 /* ---------------- モーダル・タブ ---------------- */
@@ -388,6 +394,22 @@ ov.classList.add("show");
 md.querySelectorAll("[data-ci]").forEach(btn => btn.addEventListener("click", () => {
 ov.classList.remove("show");
 const b = buttons[+btn.dataset.ci]; if (b && b.fn) b.fn();
+}));
+}
+function isTouchDevice() { return ("ontouchstart" in window) || (navigator.maxTouchPoints || 0) > 0;}
+/* ✅モーダル：本家ツールのポップアップ語彙（緑の丸角四角に白チェック＋文＋大きな赤い主ボタン、任意で「閉じる」）。
+* 完了・案内の表示に使う。確認（はい／やめる）は showConfirm の担当。 */
+function showOk(title, html, buttons) {
+const ov = document.getElementById("okOverlay"), md = document.getElementById("okModal");
+const btns = (buttons && buttons.length)? buttons: [{ label: "OK", cls: "primary"}];
+md.innerHTML = `<div class="okcheck">✓</div>` +
+(title? `<p class="oktitle">${esc(title)}</p>`: "") +
+`<div class="okmsg">${html}</div><div class="okbtns">` +
+btns.map((b, i) => `<button class="btn ${b.cls || ""}" data-oi="${i}">${esc(b.label)}</button>`).join("") + `</div>`;
+ov.classList.add("show");
+md.querySelectorAll("[data-oi]").forEach(btn => btn.addEventListener("click", () => {
+ov.classList.remove("show");
+const b = btns[+btn.dataset.oi]; if (b && b.fn) b.fn();
 }));
 }
 function gotoTab(n) {
@@ -419,14 +441,8 @@ renderGuide();
 function renderGuide() {
 const bar = document.getElementById("guideBar");
 if (!state.autoMode) { bar.classList.remove("show"); return;}
-const steps = [
-["② 希望休の表を確認します", 2], ["③ 休みを入力します", 3],
-["④ 自動でシフト表を作ります", 4], ["④ 採用して印刷します", 4]
-];
-const i = Math.min(state.ui.guideStep || 0, steps.length - 1);
-bar.innerHTML = `<b>🤖 オートモード：</b><span>${steps[i][0]}</span>
-<button class="btn" onclick="App.guideGo(${steps[i][1]})">この画面を開く</button>
-<button class="btn" onclick="App.guideNext()">次へ</button>
+bar.innerHTML = `<b>🤖 オートモード：オン</b><span>ポップアップの案内で、希望休から印刷まで進められます。</span>
+<button class="btn" onclick="App.guideOpen()">案内を開く</button>
 <button class="btn primary" onclick="App.guideOff()">ここからは手動で進める</button>`;
 bar.classList.add("show");
 }
@@ -592,8 +608,8 @@ function balanceText(ym) {
   const ok = expectWork >= minNeed && expectWork <= maxNeed;
   return { expectWork, avg, minNeed, maxNeed, ok };
 }
-function render3() {
-  const el = document.getElementById("page3"), ym = state.ui.month;
+/* ③の入力グリッド（通常画面とオートモードのウィザードで共用。tap でタップ時の飛び先を変える） */
+function inputGridHTML(ym, tap) {
   const md = monthData(ym), members = sortedMembers(), D = daysIn(ym), zen = zentaiSet(ym);
   const cols = prevCols(ym), auto = autoPrevCells(ym);
   const grid = Object.keys(md.prevCells || {}).length ? md.prevCells : auto;
@@ -610,16 +626,21 @@ function render3() {
     let tds = `<td class="name">${esc(mem.id)} ${esc(mem.name)}</td>`;
     for (let i = 0; i < 7; i++) {
       const mk = (grid[mem.id] || {})[i] || "";
-      tds += `<td class="cell prev ${mk ? markCls(mk) : ""}" onclick="App.prevCell('${mem.id}',${i})">${esc(mk)}</td>`;
+      tds += `<td class="cell prev ${mk ? markCls(mk) : ""}" onclick="${tap.prev}('${mem.id}',${i})">${esc(mk)}</td>`;
     }
     for (let d = 1; d <= D; d++) {
       const dt = dateOf(ym, d), sep = dt.getDay() === 6 ? " weeksep" : "";
       if (zen.has(d)) { tds += `<td class="fixed m-zen${sep}">全</td>`; continue; }
       const mk = ((md.cells || {})[mem.id] || {})[d] || "";
-      tds += `<td class="cell ${mk ? markCls(mk) : ""}${sep}" onclick="App.cell('${mem.id}',${d})">${esc(mk)}</td>`;
+      tds += `<td class="cell ${mk ? markCls(mk) : ""}${sep}" onclick="${tap.cell}('${mem.id}',${d})">${esc(mk)}</td>`;
     }
     return `<tr>${tds}</tr>`;
   }).join("");
+  return `<div class="gwrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function render3() {
+  const el = document.getElementById("page3"), ym = state.ui.month;
+  const md = monthData(ym), members = sortedMembers(), D = daysIn(ym), zen = zentaiSet(ym);
   const bal = balanceText(ym);
   const reqRows = Array.from({ length: D }, (_, i) => i + 1).filter(d => !zen.has(d)).map(d => {
     const v = (md.dayRequired || {})[d];
@@ -631,7 +652,7 @@ function render3() {
     <span class="sub">②で選んだ月と連動します。</span></div>
     <p class="sub">🖱 マスをタップすると「休」→「希（希望休）」→「有（有休）」→ 空白 と変わります。「休」は希望ではないけれど休みに決まっている日に使います。「全」は変わりません。<br>
     左の灰色7列は前月の最後の1週間です（月またぎの連勤チェック用）。前月をこのツールで「決定（採用）」していれば自動で入ります。空のままの人はチェックしません。</p>
-    <div class="gwrap"><table class="grid"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+    ${inputGridHTML(ym, { prev: "App.prevCell", cell: "App.cell" })}
     <div class="mt ${bal.ok ? "greentext" : "warntext"}">この月の延べ出勤 ${bal.expectWork}人日（1日平均 ${bal.avg}人）／必要：最低 ${bal.minNeed}人日 〜 最大 ${bal.maxNeed}人日<br>
     ${bal.ok ? "釣り合っています。" : "釣り合っていません。休みの数を見直してください。"}</div>
   </div>
@@ -829,7 +850,7 @@ function render5() {
     ${fbRows}
 
     <h4 class="mt">🤖 オートモード</h4>
-    <p class="sub">オンにすると、ポップアップと案内だけで希望休から印刷まで進められます。途中いつでも「ここからは手動で進める」で抜けられます。（Muse版は簡易版です）</p>
+    <p class="sub">オンにすると、ポップアップが順に開いて「希望休の印刷 → 休みの入力 → 自動作成 → 表の確認 → 採用 → 印刷」まで案内します（入力欄は大きく表示されます）。途中いつでも「ここからは手動で進める」で抜けられます。データは通常モードと共通です。</p>
     <button class="btn ${state.autoMode ? "primary" : ""}" onclick="App.autoToggle()">オートモード：${state.autoMode ? "オン" : "オフ"}</button>
   </div>`;
 }
@@ -886,6 +907,132 @@ function renderAdmin() {
   <div class="btnrow"><button class="btn blue big" onclick="App.blankSheet()">🆕 白紙の表を作る</button></div>
   <p class="sub">※ Muse版では、登録・配布は端末内だけの疑似動作です。</p>`;
   document.getElementById("adminOverlay").classList.add("show");
+}
+
+/* ---------------- セルの循環・採用（通常画面とウィザードで共用） ---------------- */
+function cycleInputCell(id, d) {
+  const ym = state.ui.month, md = monthData(ym);
+  if (!md.cells[id]) md.cells[id] = {};
+  const cur = md.cells[id][d] || "";
+  const next = cur === "" ? "休" : cur === "休" ? "希" : cur === "希" ? "有" : "";
+  if (next) md.cells[id][d] = next; else delete md.cells[id][d];
+  save();
+}
+function cyclePrevCell(id, i) {
+  const ym = state.ui.month, md = monthData(ym);
+  if (!Object.keys(md.prevCells || {}).length) md.prevCells = autoPrevCells(ym);
+  if (!md.prevCells[id]) md.prevCells[id] = {};
+  const cur = md.prevCells[id][i] || "";
+  const next = cur === "" ? "休" : cur === "休" ? "希" : cur === "希" ? "有" : "";
+  if (next) md.prevCells[id][i] = next; else delete md.prevCells[id][i];
+  if (md.prevOffsOverride) { delete md.prevOffsOverride[id]; if (md.prevStreakOverride) delete md.prevStreakOverride[id]; }
+  save();
+}
+function cycleCurCell(id, d) {
+  const ym = state.ui.month, sh = shiftOf(ym);
+  if (!sh.cur) return;
+  const sch = sh.cur.schedule, cur = (sch[id] || {})[d] || "";
+  if (cur === "全") return;
+  const next = cur === "" ? "公" : cur === "公" ? "希" : cur === "希" ? "有" : "";
+  if (!sch[id]) sch[id] = {};
+  if (next) sch[id][d] = next; else delete sch[id][d];
+  if (sh.view === "manual" && sh.manual) sh.manual.schedule = sch;
+  if ((sh.view === "A" || sh.view === "B") && sh.plans[sh.view]) sh.plans[sh.view].schedule = sch;
+  save();
+}
+function doAdopt() {
+  const ym = state.ui.month, sh = shiftOf(ym);
+  if (!sh.cur) return false;
+  const now = new Date().toISOString();
+  sh.adopted = { schedule: JSON.parse(JSON.stringify(sh.cur.schedule)), kind: sh.cur.kind || "手動用", adoptedAt: now, updatedAt: now };
+  save();
+  return true;
+}
+
+/* ---------------- オートモード（ポップアップで進めるウィザード） ----------------
+* 作業リスト項目11の本格版。ポップアップが順に開き、②希望休の表の印刷 →
+* ③休みの入力（大きく表示したグリッドをタップ）→ ④自動作成（進行文つき）→
+* A案/B案の確認 → 採用 → 印刷の案内、と進める。どのポップアップにも
+* 「ここからは手動で進める」を置く。データは通常モードと同一の state を使う。 */
+let wizStep = 0;
+function openWizard() { wizStep = 0; renderWizard(); document.getElementById("wizOverlay").classList.add("show"); }
+function closeWizard() { document.getElementById("wizOverlay").classList.remove("show"); }
+function wizFoot(buttons) {
+  return `<div class="btnrow wizfoot">${buttons}<button class="btn" onclick="App.wizManual()">ここからは手動で進める</button></div>`;
+}
+function renderWizard() {
+  const md = document.getElementById("wizModal");
+  const ym = state.ui.month, sh = shiftOf(ym);
+  const titles = ["② 希望休の表を印刷します", "③ 休みを入力します", "④ 自動でシフト表を作ります", "できあがった表を確認します", "採用しました。印刷しましょう"];
+  let body = "";
+  if (wizStep === 0) {
+    body = `<p class="sub">${ymLabel(ym)} の希望休の表です。まず印刷して、みんなに配ってください。用紙は下で選べます。</p>
+      ${paperPreviewHTML("kibou", ym, null)}
+      <div class="flex">${paperControls("W")}</div>
+      <div class="btnrow"><button class="btn primary" onclick="App.wizPrintKibou()">この表を印刷する</button></div>` +
+      wizFoot(`<button class="btn primary" onclick="App.wizGo(1)">次へ：③ 休みの入力 →</button>`);
+  } else if (wizStep === 1) {
+    const bal = balanceText(ym);
+    body = `<p class="sub">${ymLabel(ym)} の休みを入力します。マスをタップすると「休」→「希（希望休）」→「有（有休）」→ 空白 と変わります。②の表で集めた希望休をここに入れてください。</p>
+      <div class="wizgrid">${inputGridHTML(ym, { prev: "App.wizPrevCell", cell: "App.wizCell" })}</div>
+      <div class="mt ${bal.ok ? "greentext" : "warntext"}">この月の延べ出勤 ${bal.expectWork}人日（1日平均 ${bal.avg}人）／必要：最低 ${bal.minNeed}人日 〜 最大 ${bal.maxNeed}人日<br>
+      ${bal.ok ? "釣り合っています。" : "釣り合っていません。休みの数を見直してください。"}</div>` +
+      wizFoot(`<button class="btn" onclick="App.wizGo(0)">← 戻る</button><button class="btn primary" onclick="App.wizGo(2)">次へ：④ 自動作成 →</button>`);
+  } else if (wizStep === 2) {
+    const has = !!(sh.plans && (sh.plans.A || sh.plans.B));
+    body = `<p class="sub">「自動でシフト表を作る」を押すと、条件に合う組み合わせを探して A案・B案を作ります（30秒〜1分ほどかかることがあります）。</p>
+      <div class="progress" id="wizLog">${has ? "この月の表はもうできています。そのまま次へ進めます。作り直すこともできます。" : "まだ作っていません。下のボタンを押してください。"}</div>
+      <div class="btnrow"><button class="btn primary big" onclick="App.wizSolve()">▶ 自動でシフト表を作る</button></div>` +
+      wizFoot(`<button class="btn" onclick="App.wizGo(1)">← 戻る</button>` + (has ? `<button class="btn primary" onclick="App.wizGo(3)">次へ：表を確認 →</button>` : ""));
+  } else if (wizStep === 3) {
+    const view = sh.view || "A";
+    const curSch = sh.cur ? sh.cur.schedule : null;
+    const planBtns = ["A", "B"].map(p => sh.plans[p] ? `<button class="btn ${view === p ? "primary" : ""}" onclick="App.viewPlanW('${p}')">${p}案を見る</button>` : "").join("") +
+      (sh.manual ? `<button class="btn ${view === "manual" ? "primary" : ""}" onclick="App.viewPlanW('manual')">手動用を見る</button>` : "");
+    body = (curSch ? `<div class="btnrow">${planBtns}</div>
+      <h4>${view === "manual" ? "手動用" : view + "案"} のシフト表</h4>
+      <p class="sub">マスをタップ：「公」→「希」→「有」→ 空欄（「全」は変わりません）。直すと下のチェックも出直します。</p>
+      ${scheduleTableHTML(ym, curSch, true, "App.wizTap")}
+      ${checkHTML(curSch, ym)}
+      <p class="sub">よければ「この表を採用する」を押してください。</p>` : `<p class="sub">表がまだありません。戻って自動作成をしてください。</p>`) +
+      wizFoot(`<button class="btn" onclick="App.wizGo(2)">← 戻る</button>` + (curSch ? `<button class="btn green" onclick="App.wizAdopt()">✔ この表を採用する</button>` : ""));
+  } else {
+    body = `<div class="okcheck">✓</div>
+      <p style="text-align:center;font-size:17px"><b>${ymLabel(ym)} のシフト表を採用しました。</b></p>
+      <p class="sub">最後に印刷します。用紙を選んで「この表を印刷する」を押してください。印刷した表は、いつでも ④ の「過去のシフト表」から印刷し直せます。</p>
+      <div class="flex">${paperControls("W2")}</div>
+      <div class="btnrow"><button class="btn primary big" onclick="App.wizPrint()">この表を印刷する</button></div>` +
+      wizFoot(`<button class="btn primary" onclick="App.wizClose()">おわる（閉じる）</button>`);
+  }
+  md.innerHTML = `<h3>🤖 オートモード（${wizStep + 1}／5）${titles[wizStep]}</h3>${body}`;
+  fitPaperScales();
+}
+function wizSolveRun() {
+  const ym = state.ui.month;
+  const setLog = t => { const l = document.getElementById("wizLog"); if (l) l.textContent = t; };
+  setLog("ルールを守れる組み合わせを探しています…");
+  setTimeout(() => {
+    try {
+      const { membersData, input, cond, opts } = buildSolverInput(ym);
+      const res = S.solveShift(membersData, input, cond, { ...opts, plans: ["A"] });
+      const sh = shiftOf(ym);
+      if (res.plans.A && res.plans.A.schedule) sh.plans.A = res.plans.A;
+      setLog("週2日の休み・最低人数・連勤を確かめています");
+      setTimeout(() => {
+        try {
+          const resB = S.solveShift(membersData, input, cond, { ...opts, plans: ["B"], seed: (opts.seed || 1) + 999 });
+          if (resB.plans.B && resB.plans.B.schedule) sh.plans.B = resB.plans.B;
+          if (!sh.plans.A && !sh.plans.B) { setLog("解が見つかりませんでした。③に戻って入力や条件を見直してください。"); save(); return; }
+          const first = sh.plans.A ? "A" : "B";
+          sh.view = first; sh.cur = { schedule: sh.plans[first].schedule, kind: first + "案" };
+          save();
+          const made = ["A", "B"].filter(k => sh.plans[k]).map(k => k + "案").concat(["手動用"]).join("・");
+          setLog("できました（" + made + "）");
+          setTimeout(() => { wizStep = 3; renderWizard(); }, 500);
+        } catch (e2) { setLog("B案の作成でエラーが出ました：" + e2.message); }
+      }, 60);
+    } catch (e) { setLog("作成できませんでした：" + e.message); }
+  }, 60);
 }
 
 /* ---------------- 操作（App） ---------------- */
@@ -1006,24 +1153,10 @@ const App = {
     }
     rerender();
   },
-  cell(id, d) {
-    const ym = state.ui.month, md = monthData(ym);
-    if (!md.cells[id]) md.cells[id] = {};
-    const cur = md.cells[id][d] || "";
-    const next = cur === "" ? "休" : cur === "休" ? "希" : cur === "希" ? "有" : "";
-    if (next) md.cells[id][d] = next; else delete md.cells[id][d];
-    save(); render3();
-  },
-  prevCell(id, i) {
-    const ym = state.ui.month, md = monthData(ym);
-    if (!Object.keys(md.prevCells || {}).length) md.prevCells = autoPrevCells(ym);
-    if (!md.prevCells[id]) md.prevCells[id] = {};
-    const cur = md.prevCells[id][i] || "";
-    const next = cur === "" ? "休" : cur === "休" ? "希" : cur === "希" ? "有" : "";
-    if (next) md.prevCells[id][i] = next; else delete md.prevCells[id][i];
-    if (md.prevOffsOverride) { delete md.prevOffsOverride[id]; if (md.prevStreakOverride) delete md.prevStreakOverride[id]; }
-    save(); render3();
-  },
+  cell(id, d) { cycleInputCell(id, d); render3(); },
+  wizCell(id, d) { cycleInputCell(id, d); renderWizard(); },
+  prevCell(id, i) { cyclePrevCell(id, i); render3(); },
+  wizPrevCell(id, i) { cyclePrevCell(id, i); renderWizard(); },
   setDayRequired(d, v) {
     const md = monthData(state.ui.month);
     if (v === "" || v == null) delete md.dayRequired[d]; else md.dayRequired[d] = parseInt(v, 10);
@@ -1046,14 +1179,14 @@ const App = {
   },
   autoSolve() {
     const ym = state.ui.month, log = document.getElementById("solveLog");
-    log.textContent = "A案：優先の条件から順番に組み合わせを考えています…";
+    log.textContent = "ルールを守れる組み合わせを探しています…";
     setTimeout(() => {
       try {
         const { membersData, input, cond, opts } = buildSolverInput(ym);
         const res = S.solveShift(membersData, input, cond, { ...opts, plans: ["A"] });
         const sh = shiftOf(ym);
         if (res.plans.A && res.plans.A.schedule) sh.plans.A = res.plans.A;
-        log.textContent = "A案ができました。\nB案：なるべく回送員の個別条件に沿った組み合わせで作っています…";
+        log.textContent = "週2日の休み・最低人数・連勤を確かめています";
         setTimeout(() => {
           try {
             const resB = S.solveShift(membersData, input, cond, { ...opts, plans: ["B"], seed: (opts.seed || 1) + 999 });
@@ -1066,8 +1199,8 @@ const App = {
             if (!lines.length) { log.textContent = "解が見つかりませんでした。③の入力や条件を見直してください。"; save(); return; }
             sh.view = "A"; sh.cur = { schedule: sh.plans.A.schedule, kind: "A案" };
             save(); render4();
-            const l2 = document.getElementById("solveLog"); if (l2) l2.textContent = lines.join("\n");
-            toast("シフト表ができました");
+            const made = ["A", "B"].filter(k => sh.plans[k]).map(k => k + "案").concat(["手動用"]).join("・");
+            const l2 = document.getElementById("solveLog"); if (l2) l2.textContent = "できました（" + made + "）";
           } catch (e2) { log.textContent = "B案の作成でエラーが出ました：" + e2.message; }
         }, 60);
       } catch (e) { log.textContent = "作成できませんでした：" + e.message; }
@@ -1088,26 +1221,12 @@ const App = {
     sh.manual = { schedule }; sh.view = "manual"; sh.cur = { schedule, kind: "手動用" };
     rerender(); toast("希望休だけの表を作りました");
   },
-  curTap(id, d) {
-    const ym = state.ui.month, sh = shiftOf(ym);
-    if (!sh.cur) return;
-    const sch = sh.cur.schedule, cur = (sch[id] || {})[d] || "";
-    if (cur === "全") return;
-    const next = cur === "" ? "公" : cur === "公" ? "希" : cur === "希" ? "有" : "";
-    if (!sch[id]) sch[id] = {};
-    if (next) sch[id][d] = next; else delete sch[id][d];
-    if (sh.view === "manual" && sh.manual) sh.manual.schedule = sch;
-    if ((sh.view === "A" || sh.view === "B") && sh.plans[sh.view]) sh.plans[sh.view].schedule = sch;
-    save();
-    // 表とチェックだけ出直す（全体再描画でも可だがスクロール維持のため部分更新）
-    render4();
-  },
+  curTap(id, d) { cycleCurCell(id, d); render4(); },
+  wizTap(id, d) { cycleCurCell(id, d); renderWizard(); },
   adopt() {
-    const ym = state.ui.month, sh = shiftOf(ym);
-    if (!sh.cur) return;
-    const now = new Date().toISOString();
-    sh.adopted = { schedule: JSON.parse(JSON.stringify(sh.cur.schedule)), kind: sh.cur.kind || "手動用", adoptedAt: now, updatedAt: now };
-    save(); render4(); toast(ymLabel(ym) + " を正式なシフト表に採用しました");
+    if (!doAdopt()) return;
+    render4();
+    showOk("採用しました", `<p>${ymLabel(state.ui.month)} を正式なシフト表に採用しました。<br>過去のシフト表に残り、いつでも印刷できます。</p>`, [{ label: "OK", cls: "primary" }]);
   },
   printCur() {
     App.paperChange();
@@ -1148,7 +1267,7 @@ const App = {
       const o = importString(document.getElementById("ioText").value);
       if (o.kind === "full" && o.state) { state = o.state; }
       else applyBaseData(o);
-      rerender(); toast("読み込みました（内容は全部入れ替わりました）");
+      rerender(); showOk("読み込みました", `<p>内容は全部入れ替わりました。</p>`, [{ label: "OK", cls: "primary" }]);
     } catch (e) { toast("読み込めませんでした：" + e.message); }
   },
   ioSaveFile() {
@@ -1168,7 +1287,7 @@ const App = {
       [{ label: "やめる" }, { label: "送る", cls: "primary", fn() {
         state.inbox.push({ from: name, kind: "data", date: new Date().toISOString().slice(0, 10), text: state.ui.month + " の入力データ", str: exportString({ kind: "month", ym: state.ui.month, data: monthData(state.ui.month) }), handled: false });
         save(); renderHeader(); render5();
-        showConfirm("送りました", `<p>管理者に送りました。管理者が確認して、必要ならデフォルトに登録します。そのままお待ちください。</p>`, [{ label: "OK", cls: "primary" }]);
+        showOk("送りました", `<p>管理者に送りました。管理者が確認して、必要ならデフォルトに登録します。そのままお待ちください。</p>`, [{ label: "OK", cls: "primary" }]);
       } }]);
   },
   inboxRegister(i) {
@@ -1176,7 +1295,8 @@ const App = {
     try {
       const o = importString(x.str || "");
       if (o.kind === "month") { state.months[o.ym] = o.data; }
-      x.handled = true; save(); renderHeader(); render5(); toast("デフォルトに登録しました（疑似動作）");
+      x.handled = true; save(); renderHeader(); render5();
+      showOk("登録しました", `<p>デフォルトに登録しました。<br><span class="sub">※ Muse版ではこの端末内だけの疑似動作です。</span></p>`, [{ label: "OK", cls: "primary" }]);
     } catch (e) { toast("登録できませんでした：" + e.message); }
   },
   inboxDelete(i) { state.inbox.splice(i, 1); rerender(); },
@@ -1204,10 +1324,31 @@ const App = {
     a.href = URL.createObjectURL(new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv" }));
     a.download = "shift-" + ym + ".csv"; a.click(); URL.revokeObjectURL(a.href);
   },
-  autoToggle() { state.autoMode = !state.autoMode; state.ui.guideStep = 0; rerender(); },
-  guideGo(tab) { gotoTab(tab); },
-  guideNext() { state.ui.guideStep = Math.min((state.ui.guideStep || 0) + 1, 3); save(); renderGuide(); },
-  guideOff() { state.autoMode = false; rerender(); toast("オートモードを切りました。手動で進めてください"); },
+  autoToggle() {
+    state.autoMode = !state.autoMode;
+    if (state.autoMode) { save(); renderHeader(); render5(); openWizard(); }
+    else { closeWizard(); rerender(); toast("オートモードを切りました。手動で進めてください"); }
+  },
+  guideOpen() { if (state.autoMode) openWizard(); },
+  guideOff() { state.autoMode = false; closeWizard(); rerender(); toast("オートモードを切りました。手動で進めてください"); },
+  /* オートモードのウィザード操作 */
+  wizGo(n) { wizStep = n; renderWizard(); },
+  wizManual() { state.autoMode = false; closeWizard(); rerender(); toast("手動で進めてください"); },
+  wizClose() { closeWizard(); },
+  wizSolve() { wizSolveRun(); },
+  wizAdopt() { if (doAdopt()) { wizStep = 4; renderWizard(); } },
+  wizPaper(suffix) {
+    const s = document.getElementById("paperSize" + suffix), o = document.getElementById("paperOri" + suffix);
+    if (s) state.paper.size = s.value; if (o) state.paper.orient = o.value; save();
+  },
+  wizPrintKibou() { App.wizPaper("W"); openPrint("kibou", state.ui.month, null); },
+  wizPrint() { App.wizPaper("W2"); const ad = shiftOf(state.ui.month).adopted; if (ad) openPrint("shift", state.ui.month, ad.schedule); },
+  viewPlanW(p) {
+    const ym = state.ui.month, sh = shiftOf(ym);
+    sh.view = p;
+    sh.cur = p === "manual" ? { schedule: sh.manual.schedule, kind: "手動用" } : { schedule: sh.plans[p].schedule, kind: p + "案" };
+    save(); renderWizard();
+  },
   /* 管理者 */
   closeAdmin() { document.getElementById("adminOverlay").classList.remove("show"); },
   userAdd() {
@@ -1215,12 +1356,15 @@ const App = {
     if (!v) { toast("メールアドレスを入れてください"); return; }
     state.users.push({ email: v, role: "利用者", protected: false });
     save(); renderAdmin();
+    showOk("追加しました", `<p>${esc(v)} へ案内メールを送りますか？<br><span class="sub">※ Muse版では実際には送られません（端末内の疑似動作）。</span></p>`,
+      [{ label: "案内を送る", cls: "primary", fn() { toast("案内メールを送りました（疑似動作）"); } }, { label: "閉じる" }]);
   },
   adminAdd() {
     const v = document.getElementById("admAdminMail").value.trim();
     if (!v) { toast("メールアドレスを入れてください"); return; }
     state.users.push({ email: v, role: "管理者", protected: false });
-    save(); renderAdmin(); toast("管理者を追加しました");
+    save(); renderAdmin();
+    showOk("追加しました", `<p>${esc(v)} を管理者に追加しました。</p>`, [{ label: "OK", cls: "primary" }]);
   },
   userRemove(i) {
     const u = state.users[i];
@@ -1242,13 +1386,14 @@ const App = {
     const prev = state.defaults[base] || null;
     state.defaults[base] = { str, savedAt: new Date().toISOString(), memberCount: state.members.length, prev };
     save(); renderAdmin();
-    showConfirm("登録しました", `<p>デフォルトに登録しました。ほかの端末には『新しいデータがあります』と出て、更新するとこの端末と同じ内容になります。</p><p class="sub">※ Muse版ではこの端末内だけの疑似動作です。</p>`, [{ label: "OK", cls: "primary" }]);
+    showOk("登録しました", `<p>デフォルトに登録しました。ほかの端末を開くと『新しいデータがあります 入れ替えますか？』と出ます。入れ替えると、この端末と同じ内容になります。</p><p class="sub">※ Muse版ではこの端末内だけの疑似動作です。</p>`, [{ label: "OK", cls: "primary" }]);
   },
   admApplyFrame() {
     try {
       const o = importString(document.getElementById("admDataText").value);
       applyBaseData(o); state.defaultAppliedAt = new Date().toISOString();
-      save(); renderAdmin(); renderHeader(); rerender(); toast("枠のデータをこの端末に入れました");
+      save(); renderAdmin(); renderHeader(); rerender();
+      showOk("入れ替えました", `<p>枠のデータをこの端末に入れました。内容は全部入れ替わりました。</p>`, [{ label: "OK", cls: "primary" }]);
     } catch (e) { toast("入れられませんでした：" + e.message); }
   },
   admShowPrev() {
@@ -1275,7 +1420,7 @@ const App = {
   applyDefault() {
     const d = state.defaults[state.baseName];
     if (!d) return;
-    try { applyBaseData(importString(d.str)); state.defaultAppliedAt = new Date().toISOString(); rerender(); toast("新しいデータに入れ替えました"); }
+    try { applyBaseData(importString(d.str)); state.defaultAppliedAt = new Date().toISOString(); rerender(); showOk("入れ替えました", `<p>新しいデータに入れ替えました。</p>`, [{ label: "OK", cls: "primary" }]); }
     catch (e) { toast("入れ替えできませんでした：" + e.message); }
   },
   dismissUpdate() { state.defaultAppliedAt = state.defaults[state.baseName] ? state.defaults[state.baseName].savedAt : ""; save(); renderHeader(); }

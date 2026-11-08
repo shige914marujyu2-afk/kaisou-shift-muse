@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#101013"/>
+  <path d="M96 0 h48 v512 H96 a96 96 0 0 1 -96 -96 V96 A96 96 0 0 1 96 0 z" fill="#E8211A"/>
+  <text x="328" y="225" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="118" font-weight="800" fill="#ffffff" text-anchor="middle">いすゞ</text>
+  <rect x="196" y="262" width="264" height="14" fill="#E8211A"/>
+  <text x="328" y="408" font-family="'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="112" font-weight="800" fill="#ffffff" text-anchor="middle">シフト表</text>
+</svg>

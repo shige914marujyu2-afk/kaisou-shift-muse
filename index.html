@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>回送員シフト表ツール（Muse版）</title>
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#121216">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="シフト表">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <!--
 回送員シフト表ツール「Muse版」
 Claude製ツールのコードは一切見ず・コピーせず、仕様メモ（shift-repro/spec-notes.md）
@@ -16,6 +25,11 @@ Claude製ツールのコードは一切見ず・コピーせず、仕様メモ�
 - 説明動画3本（作業リスト12・13）は作り直してサイト内に内蔵した。拠点名は決め打ちせず、
   日本語ナレーション付きのイラスト動画。GitHubへの保存形式の都合で動画は Base64 化して
   同梱し、▶ ボタンで読み込んで <video> でページ内再生する。YouTubeリンクは置いていない。
+- ポップアップは本家ツールの語彙に統一した（緑チェックの✅モーダル／確認モーダル／
+  進行・結果の1行表示）。オートモードはポップアップで順に案内するウィザード式
+  （作業リスト11の本格版：②印刷→③入力→④自動作成→確認→採用→印刷案内）。
+- ホーム画面アイコンは本家と同じステッカーデザイン（apple-touch-icon／PWAアイコン／
+  SVGファビコン）。ホーム画面のラベルは apple-mobile-web-app-title で「シフト表」。
 -->
 <style>
 :root{
@@ -146,6 +160,22 @@ table.mtab td::before{content:attr(data-label);display:block;font-size:11px;colo
 .modal{max-width:760px;margin:26px auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
 .modal h3{margin-top:0}
 .qrbox{width:110px;height:110px;background:#fff;color:#222;display:flex;align-items:center;justify-content:center;font-size:12px;text-align:center;border-radius:6px;padding:6px}
+/* ✅モーダル（本家ツールのポップアップ：緑の丸角四角に白チェック＋大きな赤ボタン） */
+#okOverlay{z-index:70}
+.okmodal{max-width:460px;text-align:center}
+.okcheck{width:64px;height:64px;margin:4px auto 12px;background:var(--green);border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:38px;font-weight:800;line-height:1}
+.okmodal .okmsg{font-size:16px;line-height:1.7}
+.okmodal .oktitle{font-size:19px;font-weight:800;margin:0 0 6px}
+.okbtns{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.okbtns .btn{width:100%;font-size:16px;padding:12px}
+/* オートモードのウィザード（ポップアップで進める） */
+#wizOverlay{z-index:55}
+.modal.wiz{max-width:1020px}
+.wizgrid table.grid th,.wizgrid table.grid td{min-width:36px;height:42px;font-size:16px}
+.wizgrid table.grid td.name,.wizgrid table.grid th.name{font-size:14px;min-width:92px}
+.wizfoot{border-top:1px solid var(--border);padding-top:10px}
+/* 印刷後の案内（PCでは太字の1行表示） */
+.printnote{margin:10px 12px 0;background:var(--card);border:2px solid var(--green);border-radius:10px;padding:12px 14px;font-weight:800;font-size:17px}
 /* その他 */
 details.fold{background:#141419;border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:10px 0}
 details.fold summary{cursor:pointer;font-weight:700}
@@ -234,6 +264,7 @@ body>*{display:none!important}
 </header>
 
 <div id="updateNotice"></div>
+<div id="printNote" class="printnote" style="display:none"></div>
 
 <details class="bar" id="hajimete">
 <summary>📖 はじめての方へ</summary>
@@ -276,6 +307,10 @@ body>*{display:none!important}
 <div class="overlay" id="adminOverlay"><div class="modal" id="adminModal"></div></div>
 <!-- 汎用確認モーダル -->
 <div class="overlay" id="confirmOverlay"><div class="modal" id="confirmModal" style="max-width:520px"></div></div>
+<!-- ✅モーダル（完了・案内用） -->
+<div class="overlay" id="okOverlay"><div class="modal okmodal" id="okModal"></div></div>
+<!-- オートモードのウィザード -->
+<div class="overlay" id="wizOverlay"><div class="modal wiz" id="wizModal"></div></div>
 
 <div class="guidebar" id="guideBar"></div>
 <div class="toast" id="toast"></div>
