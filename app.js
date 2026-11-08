@@ -399,6 +399,7 @@ window.scrollTo({ top: 0});
 }
 function renderTab(n) {
 ({ 1: render1, 2: render2, 3: render3, 4: render4, 5: render5})[n]();
+fitPaperScales();
 }
 function renderHeader() {
 document.getElementById("hBaseName").textContent = state.baseName;
@@ -495,6 +496,26 @@ ${priRow("5 繁忙日は多くてもこの人数", "busyMax")}
 <div class="btnrow"><button class="btn primary" onclick="App.go(2)">次へ：② 希望休の表 →</button></div>`;
 }
 
+/* ---------------- 印刷イメージの画面プレビュー（紙スケール表示） ----------------
+* 画面に出す印刷イメージは、固定デザイン幅の「紙」として描き、カードの幅に
+* 合わせて transform: scale() で縮小する。スマホ幅でも文字が重ならず、紙の
+* 全体が一度に見えるようにするため（印刷用HTMLには一切影響しない）。 */
+const PAPER_DESIGN_W = 1040; // A4横の印刷可能幅 ≒ 1040px をデザイン幅にする
+function paperPreviewHTML(kind, ym, schedule) {
+  return `<div class="paperScale"><div class="paper" style="width:${PAPER_DESIGN_W}px">${sheetHTML(kind, ym, schedule)}</div></div>`;
+}
+function fitPaperScales() {
+  document.querySelectorAll(".paperScale").forEach(wrap => {
+    const paper = wrap.querySelector(".paper");
+    if (!paper) return;
+    const avail = wrap.clientWidth;
+    if (!avail) return; // 非表示のときは何もしない（表示後に呼び直される）
+    const s = Math.min(1, avail / PAPER_DESIGN_W);
+    paper.style.transform = s < 1 ? `scale(${s})` : "";
+    wrap.style.height = Math.ceil(paper.offsetHeight * s) + "px";
+  });
+}
+
 /* ---------------- ② 希望休の表 ---------------- */
 function render2() {
   const el = document.getElementById("page2"), ym = state.ui.month;
@@ -502,7 +523,7 @@ function render2() {
   <div class="card band-red"><h3>② 希望休の表（${ymLabel(ym)}）</h3>
     <div class="flex"><label>月：<select onchange="App.setMonth(this.value)">${monthOptions(ym)}</select></label>
     <span class="sub">文言を直すと印刷イメージがすぐ変わります（自動保存）。</span></div>
-    <div class="paper">${sheetHTML("kibou", ym, null)}</div>
+    ${paperPreviewHTML("kibou", ym, null)}
     <h4>文言の編集</h4>
     <label class="small">① 上の赤い枠</label><textarea rows="2" onchange="App.setText('t1',this.value)">${esc(state.texts2.t1)}</textarea>
     <label class="small">② 下の左（黒い枠）</label><textarea rows="2" onchange="App.setText('t2',this.value)">${esc(state.texts2.t2)}</textarea>
@@ -520,6 +541,7 @@ function render2() {
     <div class="btnrow"><button class="btn primary big" onclick="App.printKibou()">この表を印刷する</button></div>
   </div>
   <div class="btnrow"><button class="btn primary" onclick="App.go(3)">次へ：③ 休みの入力 →</button></div>`;
+  fitPaperScales();
 }
 
 /* ---------------- ③ 休みの入力 ---------------- */
@@ -1247,6 +1269,8 @@ window.toast = toast;
 document.getElementById("tabNav").addEventListener("click", e => {
   const b = e.target.closest("button[data-tab]"); if (b) gotoTab(+b.dataset.tab);
 });
+let fitTimer = null; // 画面幅が変わったら印刷イメージの縮小率を合わせ直す
+window.addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitPaperScales, 120); });
 document.getElementById("btnAdmin").addEventListener("click", renderAdmin);
 document.getElementById("adminOverlay").addEventListener("click", e => { if (e.target.id === "adminOverlay") App.closeAdmin(); });
 document.getElementById("btnReload").addEventListener("click", () => { location.reload(); }); // 「最新」＝最新版チェック相当（再読み込み）
